@@ -1,0 +1,29 @@
+[project]
+name = "gen3-metadata-simulator"
+version = "0.1.0"
+description = "Simulate linked Gen3 metadata JSON files from a bundled Gen3 JSON schema"
+authors = [{ name = "Joshua Harris" }]
+readme = "README.md"
+requires-python = ">=3.12.10,<4.0"
+dependencies = [
+    "gen3-validator (>=2.0.1,<3.0.0)",
+    "gen3schemadev (>=2.3.6,<3.0.0)",
+    "typer (>=0.12,<1.0)",
+    "rstr (>=3.2.2,<4.0.0)",
+]
+
+[project.scripts]
+gen3-metadata-simulator = "gen3_metadata_simulator.cli:app"
+
+[tool.poetry]
+packages = [{ include = "gen3_metadata_simulator", from = "src" }]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.0"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"

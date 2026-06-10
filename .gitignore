@@ -1,1 +1,12 @@
 examples
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# Tooling temp/output
+.cache/
+output/
