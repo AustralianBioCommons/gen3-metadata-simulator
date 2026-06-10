@@ -79,16 +79,46 @@ poetry run gen3-metadata-simulator validate \
 See [`docs/architecture.md`](docs/architecture.md) for the full data flow and
 [`docs/usage.md`](docs/usage.md) for every flag.
 
-## Roadmap: realistic clinical values (v2)
+## Realistic values with an LLM (`--provider llm`)
 
-Today, numeric values are random within schema bounds. The headline upcoming
-feature is an **LLM-backed value provider**: a lightweight model is asked for the
-plausible mean and standard deviation of each numeric clinical variable (by name
-and description), the answers are cached as a distribution table, and values are
-sampled from those distributions — so "blood pressure" lands near 120/80 instead
-of an arbitrary number. Categorical fields keep sampling from their enums. The
-`ValueProvider` interface is already in place
-(`src/gen3_metadata_simulator/providers/`); see `docs/architecture.md`.
+By default (`--provider random`) values are random within schema bounds. The
+**LLM provider** instead asks a lightweight model for the *semantic* properties
+of each field and samples from them, so output looks believable while still
+validating:
+
+- **numeric** — a distribution (mean ± stddev) and realistic limits, so
+  `month_birth` stays in `[1, 12]` and `bmi_baseline` lands near 27 ± 5;
+- **dates** — a real calendar date in a plausible window (no `3170-94-14`),
+  rendered to the schema's pattern;
+- **free text** — domain-appropriate strings (an assay `description` reads like
+  a real one) drawn from an LLM-supplied pool.
+
+Enums, booleans, and pattern-constrained strings (UBERON / ORCID / md5sum) keep
+the random/regex behavior. Specs are cached to `.cache/distributions.json`, so
+repeat runs make no API calls and a fixed `--seed` is reproducible.
+
+### Setup
+
+The API key is loaded indirectly — `.env` holds a **path** to a key file, never
+the key itself:
+
+```bash
+cp .env.example .env
+# edit .env:  LLM_API_KEY_FILE=/path/to/your/anthropic_key   (a file containing the key)
+```
+
+`.env` is gitignored. Then run with an explicit model (required):
+
+```bash
+poetry run gen3-metadata-simulator generate \
+    --schema examples/jsonschema/acdc_schema_v1.1.5.json \
+    --provider llm --llm-model claude-haiku-4-5 \
+    --num-records 5 --seed 1
+```
+
+Extra flags: `--llm-model` (required), `--cache-path` (default
+`.cache/distributions.json`). See [`docs/architecture.md`](docs/architecture.md)
+for the design and the pluggable `ValueProvider` / `SpecSource` interfaces.
 
 ## Development
 

@@ -33,13 +33,31 @@ class Provider(str, enum.Enum):
     llm = "llm"
 
 
-def _build_provider(provider: Provider, rng: random.Random, array_size: int) -> ValueProvider:
+def _build_provider(
+    provider: Provider,
+    rng: random.Random,
+    array_size: int,
+    llm_model: Optional[str],
+    cache_path: str,
+    text_pool_size: int,
+) -> ValueProvider:
     if provider is Provider.random:
         return RandomValueProvider(rng, array_size=array_size)
-    # llm: deferred to v2; constructing it is fine, calling value() raises.
-    from gen3_metadata_simulator.providers.llm_provider import LLMValueProvider
 
-    return LLMValueProvider(rng, array_size=array_size)
+    # llm: realistic values from a lightweight model. Requires an explicit model
+    # and an API key resolved from the file referenced by LLM_API_KEY_FILE.
+    if not llm_model:
+        raise typer.BadParameter("--llm-model is required when --provider llm")
+    from gen3_metadata_simulator.config import load_api_key
+    from gen3_metadata_simulator.providers.llm_provider import LLMValueProvider
+    from gen3_metadata_simulator.providers.specs import AnthropicSpecSource
+
+    api_key = load_api_key()
+    source = AnthropicSpecSource(api_key=api_key, model=llm_model)
+    return LLMValueProvider(
+        rng, source, cache_path=cache_path, array_size=array_size,
+        text_pool_size=text_pool_size,
+    )
 
 
 @app.command()
@@ -57,6 +75,10 @@ def generate(
                                       help="Value provider strategy."),
     array_size: int = typer.Option(0, "--array-size", min=0,
                                    help="Elements to emit for array properties (0 => [])."),
+    llm_model: Optional[str] = typer.Option(None, "--llm-model",
+                                            help="Model for --provider llm (required, e.g. claude-haiku-4-5)."),
+    cache_path: Path = typer.Option(Path(".cache/distributions.json"), "--cache-path",
+                                    help="Where the LLM provider caches field specs."),
     skip_validation: bool = typer.Option(False, "--skip-validation",
                                          help="Write output without self-validating."),
 ):
@@ -70,7 +92,14 @@ def generate(
         raise typer.Exit(code=1)
 
     rng = random.Random(seed)
-    value_provider = _build_provider(provider, rng, array_size)
+    try:
+        value_provider = _build_provider(
+            provider, rng, array_size, llm_model, str(cache_path),
+            text_pool_size=min(num_records, 15),
+        )
+    except Gen3SimulatorError as exc:
+        typer.secho(f"LLM configuration error: {exc}", fg=typer.colors.RED, err=True)
+        raise typer.Exit(code=1)
 
     generator = MetadataGenerator(
         loader=loader,

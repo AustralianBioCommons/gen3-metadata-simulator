@@ -9,6 +9,10 @@ class InvalidGen3SchemaError(Gen3SimulatorError):
     """Raised when an input schema is not a usable Gen3 schema."""
 
 
+class ConfigError(Gen3SimulatorError):
+    """Raised when LLM/runtime configuration (e.g. the API key file) is missing or invalid."""
+
+
 class MissingParentError(Gen3SimulatorError):
     """Raised when a link points at a parent node that has no generated records yet.
 

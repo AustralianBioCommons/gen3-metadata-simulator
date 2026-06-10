@@ -78,32 +78,50 @@ reproducibility:
   same RNG); otherwise a readable two-word token
 - array → `[]`, or `array_size` sampled elements
 
-### `LLMValueProvider` (v2 — planned)
+### `LLMValueProvider`
 
-The headline feature. Numeric clinical values should be *plausible*, not merely
-in-bounds. Design:
+Realistic, semantically-constrained values from a lightweight model. Every field
+is routed by `field_kind` (`providers/classify.py`) into one of four paths:
 
-1. **`warmup(requests)`** runs once before generation. It collects the distinct
-   numeric variables `(node, name, description)` and asks a lightweight model
-   (e.g. Claude Haiku) for each variable's population mean, standard deviation,
-   and unit. Results are cached to `<cache_dir>/distributions.json` so repeat
-   runs make zero model calls.
-2. **`value(req)`** then samples numeric properties from
-   `rng.gauss(mean, stddev)`, clamped to `[minimum, maximum]`. Categorical,
-   string, boolean, and array properties defer to a composed
-   `RandomValueProvider` — only the numeric path uses the model.
+| kind | when | how it's generated |
+|------|------|--------------------|
+| `numeric` | integer/number, not enum | `rng.gauss(mean, stddev)` clamped to `[max(schema_min, llm_min), min(schema_max, llm_max)]`, rounded for integers |
+| `date` | `format: date`/`date-time`, or a `YYYY-MM-DD` pattern, or a `*_date` name | a **real calendar date** uniformly within `[earliest, latest]` (`providers/dates.py`), rendered to the field's pattern and `re.fullmatch`-verified |
+| `text` | unconstrained string (no pattern/enum) | `rng.choice` of an LLM-supplied example pool |
+| `other` | enums, booleans, arrays, pattern-constrained strings | delegated to `RandomValueProvider` |
 
-Cache format:
+**Flow:**
+1. **`warmup(requests)`** (called by the generator before record generation):
+   filter to `numeric`/`date`/`text` fields, drop those already cached, and ask
+   the `SpecSource` for the rest in batched structured-output calls. Merge into
+   the cache and persist. The generator yields one request per `(node, property)`
+   via `iter_value_requests()`.
+2. **`value(req)`** reads the cached `FieldSpec` and takes the matching path
+   above; anything uncached falls back to `RandomValueProvider`. All randomness
+   flows through the shared seeded `rng`, so output is reproducible after warmup.
+
+**`SpecSource` (the injection seam, `providers/specs.py`):**
+- `AnthropicSpecSource` — calls the Anthropic API with `messages.parse()` +
+  a Pydantic `SpecTable` schema (structured output), chunking ~20 fields/call.
+  The model is **required** (`--llm-model`); the client is injectable for tests.
+- A fake source is used in tests so the whole provider runs offline.
+
+**Key loading (`config.py`):** `.env` holds `LLM_API_KEY_FILE`, a *path* to a
+key file (never the key itself). `load_api_key()` resolves the path and reads
+the key; `.env` is gitignored.
+
+**Cache format** (`.cache/distributions.json`, keyed `node/name`):
 
 ```json
 {
-  "demographic/bmi_baseline": {"mean": 27.5, "stddev": 5.1, "unit": "kg/m^2"},
-  "blood_pressure_test/systolic": {"mean": 120, "stddev": 15, "unit": "mmHg"}
+  "demographic/month_birth":   {"kind": "numeric", "mean": 6.5, "stddev": 3.4, "minimum": 1, "maximum": 12, "unit": "month"},
+  "demographic/baseline_date": {"kind": "date", "earliest": "1990-01-01", "latest": "2020-12-31"},
+  "lipidomics_assay/assay_description": {"kind": "text", "examples": ["LC-MS/MS lipidomics of plasma", "Shotgun lipidomics, negative ion mode"]}
 }
 ```
 
-Because the contract is just `value()` + `warmup()`, dropping the LLM provider in
-requires no change to the generator, writers, or validation.
+Because the contract is just `value()` + `warmup()`, the generator, writers, and
+validation are unchanged between providers.
 
 ## Known schema quirks handled
 

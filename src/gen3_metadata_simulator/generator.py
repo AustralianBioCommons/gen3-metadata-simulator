@@ -63,6 +63,10 @@ class MetadataGenerator:
         """
         result: dict[str, Any] = {}
 
+        # Let the value provider pre-compute anything it needs (the LLM provider
+        # builds its distribution/limit/date/text table here; random ignores it).
+        self.provider.warmup(self.iter_value_requests())
+
         # project: a single object using ``code`` rather than a submitter_id.
         project = self._make_project()
         result[PROJECT_NODE] = project
@@ -116,6 +120,21 @@ class MetadataGenerator:
 
         self.registry.add(node, record)
         return record
+
+    def iter_value_requests(self):
+        """Yield one ValueRequest per (node, data property) across all nodes.
+
+        One request per (node, property) is enough for the provider's warmup —
+        every record of a node shares the same property schema. Links, ``type``
+        and ``submitter_id`` are excluded since they are not provider-generated.
+        """
+        for node in self.order:
+            schema = self.loader.node_schema(node)
+            link_names = {ls.name for ls in extract_links(schema)}
+            for key in self._emit_keys(schema):
+                if key in (_TYPE_KEY, _SUBMITTER_ID_KEY, "code") or key in link_names:
+                    continue
+                yield _build_request(node, key, schema["properties"][key], schema)
 
     # -- helpers -------------------------------------------------------------
 

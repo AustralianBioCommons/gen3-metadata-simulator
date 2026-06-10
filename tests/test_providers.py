@@ -61,13 +61,18 @@ def test_value_provider_abc_cannot_be_instantiated():
         ValueProvider()  # type: ignore[abstract]
 
 
-def test_llm_provider_not_implemented_in_v1():
-    """The LLM provider exists as a stub and raises until v2 lands.
+def test_llm_provider_falls_back_to_random_without_a_spec():
+    """An LLM provider with no cached spec for a field defers to the random path.
 
-    The interface is defined now so the generator can target it unchanged, but
-    calling it must fail loudly rather than silently producing bad data.
+    Generation must never fail just because a field wasn't warmed up: an
+    uncached enum still yields one of its allowed values, sampled randomly.
     """
-    provider = LLMValueProvider(random.Random(0))
-    req = ValueRequest(node="n", name="p", json_type="number")
-    with pytest.raises(NotImplementedError):
-        provider.value(req)
+    from gen3_metadata_simulator.providers.specs import SpecSource
+
+    class EmptySource(SpecSource):
+        def estimate(self, requests, text_pool_size):
+            return {}
+
+    provider = LLMValueProvider(random.Random(0), EmptySource(), cache_path="/tmp/does-not-exist.json")
+    req = ValueRequest(node="n", name="p", json_type="string", enum=["a", "b"])
+    assert provider.value(req) in {"a", "b"}

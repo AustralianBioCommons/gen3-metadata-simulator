@@ -1,33 +1,21 @@
-"""LLM-backed value provider (v2 — interface defined, not yet implemented).
+"""LLM-backed value provider: realistic, semantically-constrained values.
 
-The headline feature of this project: instead of meaningless random numbers,
-ask a lightweight model (e.g. Claude Haiku) for the *distribution* of each
-numeric clinical variable, then sample realistic values from it.
+Instead of arbitrary in-bounds randomness, this provider uses a lightweight
+model's domain knowledge (captured as :class:`FieldSpec`s via a
+:class:`SpecSource`, cached to disk) to produce:
 
-Design
-------
-``warmup(requests)`` runs once before generation:
-  1. Collect the distinct numeric variables (node, name, description).
-  2. For each, prompt the model: "For the clinical variable '{name}'
-     ({description}), give a plausible population mean and standard deviation
-     with units." Parse a structured ``{mean, stddev, unit}`` response.
-  3. Cache the table to ``<cache_dir>/distributions.json`` keyed by
-     ``(node, name)`` so repeat runs make zero model calls.
+* **numeric** — sampled from a distribution and clamped to realistic limits
+  (so e.g. ``month_birth`` stays in ``[1, 12]``),
+* **dates** — real calendar dates within a plausible window, rendered to the
+  schema's pattern,
+* **text** — domain-appropriate prose drawn from an LLM-supplied pool.
 
-``value(req)``:
-  * numeric  -> ``rng.gauss(mean, stddev)`` clamped to [minimum, maximum].
-  * enum/categorical -> defer to enum sampling (compose a RandomValueProvider).
-  * string/array/boolean -> defer to the random provider.
+Everything else (enums, booleans, arrays, pattern-constrained strings) and any
+field without a cached spec falls back to the v1 :class:`RandomValueProvider`.
 
-Only the numeric path differs from v1; everything else is delegated, which is
-why ``ValueProvider`` keeps a uniform ``value()`` contract.
-
-The cache file format (``distributions.json``)::
-
-    {
-      "demographic/bmi_baseline": {"mean": 27.5, "stddev": 5.1, "unit": "kg/m^2"},
-      "blood_pressure_test/systolic": {"mean": 120, "stddev": 15, "unit": "mmHg"}
-    }
+``warmup`` runs once before generation: it asks the source for specs for the
+uncached numeric/date/text fields and persists them, so generation itself makes
+no API calls and is reproducible under a seed.
 """
 
 from __future__ import annotations
@@ -36,35 +24,83 @@ import random
 from typing import Any, Iterable
 
 from gen3_metadata_simulator.providers.base import ValueProvider, ValueRequest
+from gen3_metadata_simulator.providers.classify import field_kind
+from gen3_metadata_simulator.providers.dates import realistic_date
 from gen3_metadata_simulator.providers.random_provider import RandomValueProvider
+from gen3_metadata_simulator.providers.specs import FieldSpec, SpecCache, SpecSource, spec_key
+
+_LLM_KINDS = {"numeric", "date", "text"}
 
 
 class LLMValueProvider(ValueProvider):
-    """Sample realistic clinical values using model-supplied distributions.
-
-    Not implemented in v1. The class and cache contract are defined now so the
-    generator can target this interface without change when v2 lands.
-    """
+    """Generate realistic values from cached, LLM-supplied field specs."""
 
     def __init__(
         self,
         rng: random.Random,
-        cache_dir: str = ".cache",
-        model: str = "claude-haiku-4-5-20251001",
+        source: SpecSource,
+        cache_path: str = ".cache/distributions.json",
         array_size: int = 0,
+        text_pool_size: int = 10,
     ):
         self.rng = rng
-        self.cache_dir = cache_dir
-        self.model = model
-        self._fallback = RandomValueProvider(rng, array_size=array_size)
-        self._distributions: dict[str, dict] = {}
+        self.source = source
+        self.cache_path = cache_path
+        self.text_pool_size = text_pool_size
+        self._cache = SpecCache().load(cache_path)
+        self._random = RandomValueProvider(rng, array_size=array_size)
 
-    def warmup(self, requests: Iterable[ValueRequest]) -> None:  # pragma: no cover
-        raise NotImplementedError(
-            "LLMValueProvider is planned for v2. Use --provider random for now."
-        )
+    def warmup(self, requests: Iterable[ValueRequest]) -> None:
+        """Fetch and cache specs for uncached numeric/date/text fields."""
+        missing: dict[str, ValueRequest] = {}
+        for req in requests:
+            if field_kind(req) not in _LLM_KINDS:
+                continue
+            key = spec_key(req)
+            if key in self._cache or key in missing:
+                continue
+            missing[key] = req
+        if not missing:
+            return
 
-    def value(self, req: ValueRequest) -> Any:  # pragma: no cover
-        raise NotImplementedError(
-            "LLMValueProvider is planned for v2. Use --provider random for now."
-        )
+        estimates = self.source.estimate(list(missing.values()), self.text_pool_size)
+        for key, spec in estimates.items():
+            self._cache.put(key, spec)
+        self._cache.save(self.cache_path)
+
+    def value(self, req: ValueRequest) -> Any:
+        kind = field_kind(req)
+        spec = self._cache.get(spec_key(req)) if kind in _LLM_KINDS else None
+        if spec is not None:
+            if kind == "date" and spec.kind == "date":
+                return realistic_date(req, spec, self.rng)
+            if kind == "numeric" and spec.kind == "numeric" and spec.mean is not None:
+                return self._numeric(req, spec)
+            if kind == "text" and spec.kind == "text" and spec.examples:
+                return self.rng.choice(list(spec.examples))
+        return self._random.value(req)
+
+    def _numeric(self, req: ValueRequest, spec: FieldSpec) -> Any:
+        std = abs(spec.stddev) if spec.stddev else 0.0
+        value = self.rng.gauss(spec.mean, std)
+
+        lo = _max_opt(req.minimum, spec.minimum)
+        hi = _min_opt(req.maximum, spec.maximum)
+        if lo is not None:
+            value = max(lo, value)
+        if hi is not None:
+            value = min(hi, value)
+
+        if req.json_type == "integer":
+            return int(round(value))
+        return value
+
+
+def _max_opt(a: float | None, b: float | None) -> float | None:
+    vals = [v for v in (a, b) if v is not None]
+    return max(vals) if vals else None
+
+
+def _min_opt(a: float | None, b: float | None) -> float | None:
+    vals = [v for v in (a, b) if v is not None]
+    return min(vals) if vals else None
