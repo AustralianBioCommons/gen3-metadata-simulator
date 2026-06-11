@@ -76,8 +76,8 @@ poetry run gen3-metadata-simulator validate \
 4. **Validate** the whole set with `gen3_validator.validate_list_dict` and refuse
    to write anything that fails.
 
-See [`docs/architecture.md`](docs/architecture.md) for the full data flow and
-[`docs/usage.md`](docs/usage.md) for every flag.
+See [`docs/dev-notes.md`](docs/dev-notes.md) for a full walkthrough of how it
+works and [`docs/usage.md`](docs/usage.md) for every flag.
 
 ## Realistic values with an LLM (`--provider llm`)
 
@@ -117,16 +117,15 @@ poetry run gen3-metadata-simulator generate \
 ```
 
 Extra flags: `--llm-model` (required), `--cache-path` (default
-`.cache/distributions.json`). See [`docs/architecture.md`](docs/architecture.md)
-for the design and the pluggable `ValueProvider` / `SpecSource` interfaces.
+`.cache/distributions.json`). See [`docs/dev-notes.md`](docs/dev-notes.md) for
+the design and the pluggable `ValueProvider` / `SpecSource` interfaces.
 
 ## Documentation
 
-- **[docs/dev-notes.md](docs/dev-notes.md)** — start here if you're new to the
-  code. A ground-up, junior-dev-friendly walkthrough of how it all works, with a
-  worked example, the value providers explained, and how to extend it.
-- **[docs/architecture.md](docs/architecture.md)** — the data-flow diagram,
-  module responsibilities, and the LLM provider / cache design.
+- **[docs/dev-notes.md](docs/dev-notes.md)** — start here. A ground-up,
+  junior-dev-friendly walkthrough of how it all works: the pipeline, the value
+  providers, a worked example, design decisions, a module map, and how to
+  extend it.
 - **[docs/usage.md](docs/usage.md)** — every CLI flag for `generate` and
   `validate`, with examples.
 

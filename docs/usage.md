@@ -1,7 +1,6 @@
 # Usage
 
-> For how the tool works under the hood, see [dev-notes.md](dev-notes.md)
-> (beginner-friendly) and [architecture.md](architecture.md) (reference).
+> For how the tool works under the hood, see [dev-notes.md](dev-notes.md).
 
 ## `generate`
 

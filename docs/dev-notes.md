@@ -347,9 +347,7 @@ write a new `SpecSource` and pass it to `LLMValueProvider`.
 | `providers/llm_provider.py` | `LLMValueProvider` — ties specs + dates + random together |
 | `errors.py` | Typed exceptions (`InvalidGen3SchemaError`, `ConfigError`, …) |
 
-For the higher-level data-flow diagram and the LLM cache format, see
-[`architecture.md`](architecture.md). For every CLI flag, see
-[`usage.md`](usage.md).
+For every CLI flag and option, see [`usage.md`](usage.md).
 
 ---
 
