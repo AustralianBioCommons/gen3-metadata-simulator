@@ -6,6 +6,7 @@ import enum
 import json
 import logging
 import random
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -81,7 +82,22 @@ def _build_provider(
     return LLMValueProvider(
         rng, source, cache_path=cache_path, array_size=array_size,
         text_pool_size=text_pool_size, force_refresh=refresh_llm,
+        progress=_warmup_progress,
     )
+
+
+def _warmup_progress(done: int, total: int) -> None:
+    """Render a live batch counter on an interactive terminal during warmup.
+
+    The LLM warmup makes several API calls; without this the program looks frozen
+    for the duration. On a non-interactive stderr we stay silent and let the
+    ``--verbose`` logs report progress instead.
+    """
+    if not sys.stderr.isatty():
+        return
+    typer.echo(f"\r  Estimating field specs: {done}/{total} batches", nl=False, err=True)
+    if done == total:
+        typer.echo("", err=True)  # finish the line
 
 
 @app.command()

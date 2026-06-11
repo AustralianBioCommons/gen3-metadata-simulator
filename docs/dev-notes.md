@@ -173,9 +173,10 @@ The headline feature: use a lightweight LLM's domain knowledge to make values
 per-record (that'd be slow and expensive). Instead:
 
 1. **`warmup()`** runs once before generation. It collects every numeric/date/
-   text field, asks the model for a compact **spec** per field, and caches them
-   to `.cache/distributions.json`. Fields already in the cache (unchanged) are
-   skipped — see "Cache invalidation" below.
+   text field, asks the model for a compact **spec** per field (in **parallel
+   batches** — independent API calls run concurrently, with a live progress
+   counter), and caches them to `.cache/distributions.json`. Fields already in
+   the cache (unchanged) are skipped — see "Cache invalidation" below.
 2. **`value()`** then just samples from the cached spec — no network, fully
    reproducible under a seed.
 

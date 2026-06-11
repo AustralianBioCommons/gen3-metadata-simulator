@@ -16,9 +16,10 @@ from __future__ import annotations
 import json
 import logging
 from abc import ABC, abstractmethod
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Callable, Optional
 
 from pydantic import BaseModel
 
@@ -28,7 +29,11 @@ from gen3_metadata_simulator.providers.classify import field_kind
 logger = logging.getLogger(__name__)
 
 CHUNK_SIZE = 20
+MAX_WORKERS = 5  # concurrent API calls during warmup; gentle on rate limits
 _MODEL_MARKER = "VARIABLES_JSON:"
+
+# Progress callback: receives (completed_batches, total_batches).
+ProgressFn = Callable[[int, int], None]
 
 
 def spec_key(req: ValueRequest) -> str:
@@ -131,7 +136,8 @@ class SpecSource(ABC):
     """Produces a ``FieldSpec`` for each requested field, keyed ``"node/name"``."""
 
     @abstractmethod
-    def estimate(self, requests: list[ValueRequest], text_pool_size: int) -> dict[str, FieldSpec]:
+    def estimate(self, requests: list[ValueRequest], text_pool_size: int,
+                 progress: Optional[ProgressFn] = None) -> dict[str, FieldSpec]:
         ...
 
 
@@ -179,21 +185,40 @@ class _ChunkedSpecSource(SpecSource):
     the variable payload, logging, mapping back to ``FieldSpec``) is identical.
     """
 
-    def __init__(self, model: str | None, chunk_size: int, max_tokens: int):
+    def __init__(self, model: str | None, chunk_size: int, max_tokens: int,
+                 max_workers: int = MAX_WORKERS):
         if model is None:
             raise ValueError(f"{type(self).__name__} requires an explicit model")
         self.model = model
         self.chunk_size = chunk_size
         self.max_tokens = max_tokens
+        self.max_workers = max_workers
 
-    def estimate(self, requests: list[ValueRequest], text_pool_size: int) -> dict[str, FieldSpec]:
-        n_calls = (len(requests) + self.chunk_size - 1) // self.chunk_size
+    def estimate(self, requests: list[ValueRequest], text_pool_size: int,
+                 progress: Optional[ProgressFn] = None) -> dict[str, FieldSpec]:
+        chunks = [requests[i:i + self.chunk_size] for i in range(0, len(requests), self.chunk_size)]
+        total = len(chunks)
         logger.info("LLM estimate: %d field(s) over %d API call(s) [model=%s]",
-                    len(requests), n_calls, self.model)
+                    len(requests), total, self.model)
         out: dict[str, FieldSpec] = {}
-        for start in range(0, len(requests), self.chunk_size):
-            chunk = requests[start:start + self.chunk_size]
-            out.update(self._estimate_chunk(chunk, text_pool_size))
+
+        # The batches are independent, so run them concurrently — this is what
+        # turns a multi-minute sequential warmup into seconds. Results are merged
+        # and progress reported from the calling thread, so the callback is safe.
+        workers = min(self.max_workers, total)
+        if workers <= 1:
+            for done, chunk in enumerate(chunks, start=1):
+                out.update(self._estimate_chunk(chunk, text_pool_size))
+                if progress:
+                    progress(done, total)
+            return out
+
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = [pool.submit(self._estimate_chunk, c, text_pool_size) for c in chunks]
+            for done, future in enumerate(as_completed(futures), start=1):
+                out.update(future.result())
+                if progress:
+                    progress(done, total)
         return out
 
     def _estimate_chunk(self, chunk: list[ValueRequest], text_pool_size: int) -> dict[str, FieldSpec]:

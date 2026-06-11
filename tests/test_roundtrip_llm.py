@@ -26,7 +26,7 @@ class CannedSpecSource(SpecSource):
     realistic paths offline.
     """
 
-    def estimate(self, requests, text_pool_size):
+    def estimate(self, requests, text_pool_size, progress=None):
         out = {}
         for req in requests:
             kind = field_kind(req)

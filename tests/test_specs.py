@@ -209,6 +209,26 @@ def test_openai_source_chunks_large_batches():
     assert len(client.calls) == 3
 
 
+def test_estimate_reports_progress_for_every_batch():
+    """estimate() invokes the progress callback once per completed batch, ending at total.
+
+    The warmup makes several API calls and previously looked frozen; the progress
+    callback is what drives the live counter. With chunk_size=2 and five fields
+    (three batches) the callback must be called for 1/3, 2/3, 3/3 — and every
+    batch's result must still be returned.
+    """
+    client = _FakeClient()
+    source = AnthropicSpecSource(model="claude-haiku-4-5", client=client, chunk_size=2)
+    reqs = [_numeric_req("n", f"p{i}") for i in range(5)]
+
+    seen = []
+    specs = source.estimate(reqs, text_pool_size=3, progress=lambda done, total: seen.append((done, total)))
+
+    assert len(specs) == 5
+    assert [d for d, _ in seen] == [1, 2, 3]   # one tick per batch
+    assert seen[-1] == (3, 3)                   # finishes at total
+
+
 def test_spec_key_uses_node_and_name():
     """spec_key composes the cache key as 'node/name' (the cache's addressing)."""
     assert spec_key(_numeric_req("demographic", "bmi_baseline")) == "demographic/bmi_baseline"

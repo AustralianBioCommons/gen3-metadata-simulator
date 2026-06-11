@@ -26,7 +26,7 @@ class FakeSpecSource(SpecSource):
         self._specs = specs
         self.requested_keys = []
 
-    def estimate(self, requests, text_pool_size):
+    def estimate(self, requests, text_pool_size, progress=None):
         out = {}
         for req in requests:
             self.requested_keys.append(spec_key(req))

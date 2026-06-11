@@ -46,12 +46,14 @@ class LLMValueProvider(ValueProvider):
         array_size: int = 0,
         text_pool_size: int = 10,
         force_refresh: bool = False,
+        progress=None,
     ):
         self.rng = rng
         self.source = source
         self.cache_path = cache_path
         self.text_pool_size = text_pool_size
         self.force_refresh = force_refresh
+        self.progress = progress
         self._cache = SpecCache().load(cache_path)
         self._random = RandomValueProvider(rng, array_size=array_size)
 
@@ -86,7 +88,8 @@ class LLMValueProvider(ValueProvider):
         if not missing:
             return
 
-        estimates = self.source.estimate(list(missing.values()), self.text_pool_size)
+        estimates = self.source.estimate(list(missing.values()), self.text_pool_size,
+                                          progress=self.progress)
         for key, spec in estimates.items():
             self._cache.put(key, spec, fingerprint=missing[key].fingerprint)
         self._cache.save(self.cache_path)

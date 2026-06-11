@@ -34,7 +34,7 @@ def test_configure_logging_maps_flags_to_levels():
 class _OneNumericSource(SpecSource):
     """Returns a numeric spec for whatever is asked (no network)."""
 
-    def estimate(self, requests, text_pool_size):
+    def estimate(self, requests, text_pool_size, progress=None):
         return {spec_key(r): FieldSpec(kind="numeric", mean=27.0, stddev=5.0, minimum=12, maximum=60)
                 for r in requests}
 

@@ -53,6 +53,10 @@ poetry run gen3-metadata-simulator generate \
     --provider llm -n 5 --seed 1
 ```
 
+The first run estimates field specs in **parallel batches** (so warmup takes
+tens of seconds, not minutes) and shows a live `Estimating field specs: N/M
+batches` counter on an interactive terminal. Later runs reuse the cache.
+
 Override the `.env` per run with `--llm-provider anthropic|openai` and
 `--llm-model <id>` — e.g. to try OpenAI without editing the file.
 
