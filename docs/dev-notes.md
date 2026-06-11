@@ -203,16 +203,22 @@ random provider, so generation can never *fail* for lack of a spec.
 
 #### Where do the specs come from? `SpecSource` (`providers/specs.py`)
 
-`warmup()` doesn't talk to Anthropic directly — it talks to a `SpecSource`, an
-interface with one method `estimate(requests, text_pool_size) -> {key: FieldSpec}`.
-This indirection is what makes the whole provider testable offline:
+`warmup()` doesn't talk to a model vendor directly — it talks to a `SpecSource`,
+an interface with one method
+`estimate(requests, text_pool_size) -> {key: FieldSpec}`. This indirection is
+what makes the provider both **multi-vendor** and testable offline:
 
-- **`AnthropicSpecSource`** — the real one. Batches ~20 fields per call to
-  `client.messages.parse(...)` with a Pydantic schema (structured output, so the
-  model is forced to return valid JSON), and maps the reply into `FieldSpec`s.
-  The Anthropic client is injectable, so tests pass a fake instead of the network.
+- **`AnthropicSpecSource`** and **`OpenAISpecSource`** — the real ones. They
+  share a base (`_ChunkedSpecSource`) that handles batching (~20 fields/call),
+  the prompt, and mapping the reply into `FieldSpec`s; each subclass differs only
+  in one method, `_call_model` — Anthropic uses `client.messages.parse(...)`,
+  OpenAI uses `client.chat.completions.parse(...)`. Both force valid JSON via the
+  *same* Pydantic schema (structured output). The SDK client is injectable, so
+  tests pass a fake instead of hitting the network.
 - **A fake source** (in the tests) — returns canned specs. Every test runs with
   no network, no API key, no cost.
+
+Adding another vendor is just another `_ChunkedSpecSource` subclass.
 
 A `FieldSpec` is just a frozen dataclass holding the per-kind fields
 (`mean/stddev/min/max/unit`, or `earliest/latest`, or `examples`). `SpecCache`
@@ -248,18 +254,23 @@ ignore the cache and re-estimate every field. Old cache files written before
 fingerprinting still load (their entries just lack a fingerprint, so they rebuild
 once on the next run).
 
-#### How the API key is loaded (`config.py`)
+#### How LLM config is loaded (`config.py`)
 
-By design, the key is **never** stored in the repo or in `.env`. Instead:
+`.env` carries three settings; the key itself is **never** stored in the repo or
+in `.env` — only a *path* to a key file:
 
 ```
-.env  →  LLM_API_KEY_FILE=/path/to/keyfile   (a PATH, gitignored)
-keyfile (outside the repo)  →  sk-ant-...      (the actual key)
+.env  →  LLM_PROVIDER=anthropic|openai      (which vendor)
+         LLM_MODEL=claude-haiku-4-5         (which model)
+         LLM_API_KEY_FILE=/path/to/keyfile  (a PATH, gitignored)
+keyfile (outside the repo)  →  sk-...        (the actual key)
 ```
 
-`load_api_key()` reads `.env`, follows the path, reads the key file, and returns
-the key. If the variable is missing or the file is missing/empty, you get a
-clear `ConfigError` instead of a confusing 401 later.
+`load_llm_config()` reads these (CLI `--llm-provider` / `--llm-model` override
+`.env`), follows the key-file path, and returns an `LLMConfig(provider, model,
+api_key)`. The CLI picks `AnthropicSpecSource` or `OpenAISpecSource` from
+`provider`. Anything missing or invalid (unknown vendor, no model, missing/empty
+key file) raises a clear `ConfigError` instead of a confusing 401 later.
 
 ---
 

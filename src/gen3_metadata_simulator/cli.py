@@ -59,6 +59,7 @@ def _build_provider(
     provider: Provider,
     rng: random.Random,
     array_size: int,
+    llm_provider: Optional[str],
     llm_model: Optional[str],
     cache_path: str,
     text_pool_size: int,
@@ -67,16 +68,16 @@ def _build_provider(
     if provider is Provider.random:
         return RandomValueProvider(rng, array_size=array_size)
 
-    # llm: realistic values from a lightweight model. Requires an explicit model
-    # and an API key resolved from the file referenced by LLM_API_KEY_FILE.
-    if not llm_model:
-        raise typer.BadParameter("--llm-model is required when --provider llm")
-    from gen3_metadata_simulator.config import load_api_key
+    # llm: realistic values from a lightweight model. Vendor, model, and key
+    # come from .env (LLM_PROVIDER / LLM_MODEL / LLM_API_KEY_FILE), overridable
+    # by --llm-provider / --llm-model.
+    from gen3_metadata_simulator.config import load_llm_config
     from gen3_metadata_simulator.providers.llm_provider import LLMValueProvider
-    from gen3_metadata_simulator.providers.specs import AnthropicSpecSource
+    from gen3_metadata_simulator.providers.specs import AnthropicSpecSource, OpenAISpecSource
 
-    api_key = load_api_key()
-    source = AnthropicSpecSource(api_key=api_key, model=llm_model)
+    cfg = load_llm_config(provider_override=llm_provider, model_override=llm_model)
+    source_cls = OpenAISpecSource if cfg.provider == "openai" else AnthropicSpecSource
+    source = source_cls(api_key=cfg.api_key, model=cfg.model)
     return LLMValueProvider(
         rng, source, cache_path=cache_path, array_size=array_size,
         text_pool_size=text_pool_size, force_refresh=refresh_llm,
@@ -95,11 +96,13 @@ def generate(
                                      help="Project code (used as the project link target)."),
     seed: Optional[int] = typer.Option(None, "--seed", help="RNG seed for reproducible output."),
     provider: Provider = typer.Option(Provider.random, "--provider",
-                                      help="Value provider strategy."),
+                                      help="Value strategy: 'random' or 'llm'."),
     array_size: int = typer.Option(0, "--array-size", min=0,
                                    help="Elements to emit for array properties (0 => [])."),
+    llm_provider: Optional[str] = typer.Option(None, "--llm-provider",
+                                               help="LLM vendor override (anthropic|openai); defaults to .env LLM_PROVIDER."),
     llm_model: Optional[str] = typer.Option(None, "--llm-model",
-                                            help="Model for --provider llm (required, e.g. claude-haiku-4-5)."),
+                                            help="LLM model override; defaults to .env LLM_MODEL."),
     cache_path: Path = typer.Option(Path(".cache/distributions.json"), "--cache-path",
                                     help="Where the LLM provider caches field specs."),
     refresh_llm: bool = typer.Option(False, "--refresh-llm",
@@ -123,7 +126,7 @@ def generate(
     rng = random.Random(seed)
     try:
         value_provider = _build_provider(
-            provider, rng, array_size, llm_model, str(cache_path),
+            provider, rng, array_size, llm_provider, llm_model, str(cache_path),
             text_pool_size=min(num_records, 15), refresh_llm=refresh_llm,
         )
     except Gen3SimulatorError as exc:

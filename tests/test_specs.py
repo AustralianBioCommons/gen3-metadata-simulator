@@ -1,10 +1,10 @@
-"""Tests for field specs: the cache, and the Anthropic-backed spec source.
+"""Tests for field specs: the cache, and the Anthropic/OpenAI spec sources.
 
 A FieldSpec is the LLM's semantic knowledge about one field — a numeric
 distribution + limits, a plausible date range, or a pool of realistic text
-examples. The cache persists specs so repeat runs make no API calls, and the
-source turns a batch of fields into specs. The source is tested with a mocked
-Anthropic client so no network call or key is needed.
+examples. The cache persists specs so repeat runs make no API calls, and a
+source turns a batch of fields into specs. Both vendor sources are tested with a
+mocked client so no network call or key is needed.
 """
 
 import json
@@ -14,9 +14,26 @@ from gen3_metadata_simulator.providers.base import ValueRequest
 from gen3_metadata_simulator.providers.specs import (
     AnthropicSpecSource,
     FieldSpec,
+    OpenAISpecSource,
     SpecCache,
     spec_key,
 )
+
+
+def _numeric_specs_from_messages(messages):
+    """Build a canned numeric spec per variable embedded in the prompt.
+
+    Shared by the fake Anthropic and OpenAI clients so both tests echo a spec for
+    exactly the keys the source asked about.
+    """
+    text = messages[-1]["content"]
+    variables = json.loads(text.split("VARIABLES_JSON:", 1)[1])
+    return [
+        SimpleNamespace(key=v["key"], kind="numeric", mean=1.0, stddev=0.5,
+                        minimum=0.0, maximum=2.0, unit="x",
+                        earliest=None, latest=None, examples=None)
+        for v in variables
+    ]
 
 
 def test_spec_cache_roundtrips_specs_and_fingerprints(tmp_path):
@@ -86,14 +103,7 @@ class _FakeMessages:
 
     def parse(self, **kwargs):
         self._recorder.append(kwargs)
-        text = kwargs["messages"][-1]["content"]
-        variables = json.loads(text.split("VARIABLES_JSON:", 1)[1])
-        specs = [
-            SimpleNamespace(key=v["key"], kind="numeric", mean=1.0, stddev=0.5,
-                            minimum=0.0, maximum=2.0, unit="x",
-                            earliest=None, latest=None, examples=None)
-            for v in variables
-        ]
+        specs = _numeric_specs_from_messages(kwargs["messages"])
         return SimpleNamespace(parsed_output=SimpleNamespace(specs=specs))
 
 
@@ -101,6 +111,25 @@ class _FakeClient:
     def __init__(self):
         self.calls = []
         self.messages = _FakeMessages(self.calls)
+
+
+class _FakeChatCompletions:
+    """Stand-in for client.chat.completions, exposing OpenAI's parse() shape."""
+
+    def __init__(self, recorder):
+        self._recorder = recorder
+
+    def parse(self, **kwargs):
+        self._recorder.append(kwargs)
+        specs = _numeric_specs_from_messages(kwargs["messages"])
+        message = SimpleNamespace(parsed=SimpleNamespace(specs=specs))
+        return SimpleNamespace(choices=[SimpleNamespace(message=message)])
+
+
+class _FakeOpenAIClient:
+    def __init__(self):
+        self.calls = []
+        self.chat = SimpleNamespace(completions=_FakeChatCompletions(self.calls))
 
 
 def _numeric_req(node, name):
@@ -145,6 +174,39 @@ def test_anthropic_source_chunks_large_batches():
 
     assert len(specs) == 5
     assert len(client.calls) == 3  # ceil(5 / 2)
+
+
+def test_openai_source_builds_request_and_maps_response():
+    """The OpenAI source sends the model + keys and maps the parsed reply by key.
+
+    Mirrors the Anthropic test against OpenAI's response shape
+    (choices[0].message.parsed) so both vendors are proven to drive the same
+    pipeline from the same _SpecTable schema, with no network.
+    """
+    client = _FakeOpenAIClient()
+    source = OpenAISpecSource(model="gpt-4o-mini", client=client)
+    reqs = [_numeric_req("demographic", "bmi_baseline"),
+            _numeric_req("demographic", "baseline_age")]
+
+    specs = source.estimate(reqs, text_pool_size=5)
+
+    assert set(specs) == {"demographic/bmi_baseline", "demographic/baseline_age"}
+    assert specs["demographic/bmi_baseline"].kind == "numeric"
+    sent = client.calls[0]
+    assert sent["model"] == "gpt-4o-mini"
+    # OpenAI puts the system prompt as the first message and the variables in the last
+    assert sent["messages"][0]["role"] == "system"
+    blob = sent["messages"][-1]["content"]
+    assert "demographic/bmi_baseline" in blob and "demographic/baseline_age" in blob
+
+
+def test_openai_source_chunks_large_batches():
+    """estimate() splits a large batch across multiple OpenAI calls, like Anthropic."""
+    client = _FakeOpenAIClient()
+    source = OpenAISpecSource(model="gpt-4o-mini", client=client, chunk_size=2)
+    specs = source.estimate([_numeric_req("n", f"p{i}") for i in range(5)], text_pool_size=3)
+    assert len(specs) == 5
+    assert len(client.calls) == 3
 
 
 def test_spec_key_uses_node_and_name():

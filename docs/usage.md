@@ -18,7 +18,8 @@ poetry run gen3-metadata-simulator generate --schema <path> [options]
 | `--project-code`, `-p` | `simulated_project` | Project `code`; child nodes link to the project by this value. |
 | `--seed` | *(none)* | RNG seed. Set it for byte-identical, reproducible output. |
 | `--provider` | `random` | Value strategy: `random` (schema-driven random) or `llm` (realistic values via a lightweight model). |
-| `--llm-model` | *(none)* | **Required with `--provider llm`.** Model id, e.g. `claude-haiku-4-5`. |
+| `--llm-provider` | *(from `.env`)* | LLM vendor override: `anthropic` or `openai`. Defaults to `.env` `LLM_PROVIDER`. |
+| `--llm-model` | *(from `.env`)* | LLM model override, e.g. `claude-haiku-4-5` / `gpt-4o-mini`. Defaults to `.env` `LLM_MODEL`. |
 | `--cache-path` | `.cache/distributions.json` | Where the LLM provider caches field specs (so repeat runs make no API calls). |
 | `--refresh-llm` | off | Force fresh LLM estimates, ignoring the cache (re-estimates every field). |
 | `--array-size` | `0` | Number of elements to emit for array-typed properties. `0` emits `[]`. |
@@ -28,23 +29,35 @@ poetry run gen3-metadata-simulator generate --schema <path> [options]
 
 ### Realistic values with `--provider llm`
 
-The LLM provider asks a lightweight model for each field's realistic properties
-(numeric distribution + limits, plausible date ranges, example text), caches
-them, and samples from the cache. See
+The LLM provider asks a lightweight model (Anthropic **or** OpenAI) for each
+field's realistic properties (numeric distribution + limits, plausible date
+ranges, example text), caches them, and samples from the cache. See
 [dev-notes.md → Value providers](dev-notes.md#3-value-providers--where-the-values-come-from).
 
-Set up the API key once — `.env` holds a **path** to a key file, never the key:
+Set up once — copy the example env and fill in three values. `.env` holds the
+vendor, the model, and a **path** to your key file (never the key itself):
 
 ```bash
 cp .env.example .env
-# edit .env:  LLM_API_KEY_FILE=/path/to/your/anthropic_key
+# edit .env:
+#   LLM_PROVIDER=anthropic        # or: openai
+#   LLM_MODEL=claude-haiku-4-5    # or e.g. gpt-4o-mini
+#   LLM_API_KEY_FILE=/path/to/your/api_key
 ```
+
+Then select the LLM strategy (vendor + model come from `.env`):
 
 ```bash
 poetry run gen3-metadata-simulator generate \
     -s examples/jsonschema/acdc_schema_v1.1.5.json \
-    --provider llm --llm-model claude-haiku-4-5 -n 5 --seed 1
+    --provider llm -n 5 --seed 1
 ```
+
+Override the `.env` per run with `--llm-provider anthropic|openai` and
+`--llm-model <id>` — e.g. to try OpenAI without editing the file.
+
+> Two "provider" words: `--provider random|llm` is the *value strategy*;
+> `LLM_PROVIDER` / `--llm-provider` (`anthropic|openai`) is the *LLM vendor*.
 
 The cache fingerprints each field by its schema, so a later run against an
 **edited** schema re-estimates only the fields that actually changed; everything

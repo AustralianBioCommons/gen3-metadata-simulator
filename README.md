@@ -93,32 +93,38 @@ validating:
 - **free text** — domain-appropriate strings (an assay `description` reads like
   a real one) drawn from an LLM-supplied pool.
 
-Enums, booleans, and pattern-constrained strings (UBERON / ORCID / md5sum) keep
-the random/regex behavior. Specs are cached to `.cache/distributions.json`, so
-repeat runs make no API calls and a fixed `--seed` is reproducible.
+Works with **Anthropic** or **OpenAI** models. Enums, booleans, and
+pattern-constrained strings (UBERON / ORCID / md5sum) keep the random/regex
+behavior. Specs are cached to `.cache/distributions.json`, so repeat runs make
+no API calls and a fixed `--seed` is reproducible.
 
 ### Setup
 
-The API key is loaded indirectly — `.env` holds a **path** to a key file, never
-the key itself:
+Copy the example env file and fill in three values — the vendor, the model, and
+a **path** to a file holding your API key (the key never goes in `.env` or the
+repo):
 
 ```bash
 cp .env.example .env
-# edit .env:  LLM_API_KEY_FILE=/path/to/your/anthropic_key   (a file containing the key)
+# edit .env:
+#   LLM_PROVIDER=anthropic            # or: openai
+#   LLM_MODEL=claude-haiku-4-5        # or e.g. gpt-4o-mini
+#   LLM_API_KEY_FILE=/path/to/your/api_key
 ```
 
-`.env` is gitignored. Then run with an explicit model (required):
+`.env` is gitignored. Then just select the LLM strategy — provider and model
+come from `.env`:
 
 ```bash
 poetry run gen3-metadata-simulator generate \
     --schema examples/jsonschema/acdc_schema_v1.1.5.json \
-    --provider llm --llm-model claude-haiku-4-5 \
-    --num-records 5 --seed 1
+    --provider llm --num-records 5 --seed 1
 ```
 
-Extra flags: `--llm-model` (required), `--cache-path` (default
-`.cache/distributions.json`). See [`docs/dev-notes.md`](docs/dev-notes.md) for
-the design and the pluggable `ValueProvider` / `SpecSource` interfaces.
+Override per run with `--llm-provider anthropic|openai` and `--llm-model <id>`.
+See [`docs/usage.md`](docs/usage.md) for all flags and
+[`docs/dev-notes.md`](docs/dev-notes.md) for the design and the pluggable
+`ValueProvider` / `SpecSource` interfaces.
 
 ## Documentation
 

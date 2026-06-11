@@ -8,8 +8,67 @@ directly or leaked.
 
 import pytest
 
-from gen3_metadata_simulator.config import load_api_key
+from gen3_metadata_simulator.config import load_api_key, load_llm_config
 from gen3_metadata_simulator.errors import ConfigError
+
+
+def _write_env(tmp_path, **vars) -> str:
+    """Write a temp .env with a key file, returning its path. Helper for tests."""
+    key_file = tmp_path / "key.txt"
+    key_file.write_text("sk-secret\n")
+    lines = [f"LLM_API_KEY_FILE={key_file}"]
+    lines += [f"{k}={v}" for k, v in vars.items()]
+    env_file = tmp_path / ".env"
+    env_file.write_text("\n".join(lines) + "\n")
+    return str(env_file)
+
+
+def test_load_llm_config_reads_provider_model_and_key(tmp_path):
+    """A full .env yields an LLMConfig with provider, model, and the key.
+
+    This is the canonical setup the user fills in: the three LLM settings live in
+    .env (vendor + model + key-file path) and resolve to one config object.
+    """
+    env = _write_env(tmp_path, LLM_PROVIDER="openai", LLM_MODEL="gpt-4o-mini")
+    cfg = load_llm_config(env_path=env)
+    assert cfg.provider == "openai"
+    assert cfg.model == "gpt-4o-mini"
+    assert cfg.api_key == "sk-secret"
+
+
+def test_load_llm_config_defaults_provider_to_anthropic(tmp_path):
+    """A .env without LLM_PROVIDER defaults to anthropic (back-compat).
+
+    Older single-variable .env files (key path only) must keep working, defaulting
+    to the original vendor.
+    """
+    env = _write_env(tmp_path, LLM_MODEL="claude-haiku-4-5")
+    assert load_llm_config(env_path=env).provider == "anthropic"
+
+
+def test_load_llm_config_rejects_unknown_provider(tmp_path):
+    """An unsupported LLM_PROVIDER raises ConfigError listing the valid choices."""
+    env = _write_env(tmp_path, LLM_PROVIDER="gemini", LLM_MODEL="x")
+    with pytest.raises(ConfigError):
+        load_llm_config(env_path=env)
+
+
+def test_load_llm_config_requires_a_model(tmp_path):
+    """A .env with no LLM_MODEL (and no override) raises ConfigError."""
+    env = _write_env(tmp_path, LLM_PROVIDER="openai")
+    with pytest.raises(ConfigError):
+        load_llm_config(env_path=env)
+
+
+def test_overrides_beat_env(tmp_path):
+    """--llm-provider / --llm-model override the .env values.
+
+    Lets a user point an Anthropic-configured .env at OpenAI for one run without
+    editing the file.
+    """
+    env = _write_env(tmp_path, LLM_PROVIDER="anthropic", LLM_MODEL="claude-haiku-4-5")
+    cfg = load_llm_config(env_path=env, provider_override="openai", model_override="gpt-4o-mini")
+    assert cfg.provider == "openai" and cfg.model == "gpt-4o-mini"
 
 
 def test_load_api_key_reads_key_from_referenced_file(tmp_path):

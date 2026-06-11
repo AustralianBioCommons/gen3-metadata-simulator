@@ -171,26 +171,20 @@ _SYSTEM = (
 )
 
 
-class AnthropicSpecSource(SpecSource):
-    """Estimate field specs via the Anthropic API using structured output.
+class _ChunkedSpecSource(SpecSource):
+    """Shared batching/prompt/mapping for API-backed sources.
 
-    The Anthropic client is injectable for testing; in production it is created
-    lazily from an API key so importing this module never requires the SDK.
+    Subclasses differ only in ``_call_model`` — the actual vendor SDK call that
+    turns a system+user prompt into a ``_SpecTable``. Everything else (chunking,
+    the variable payload, logging, mapping back to ``FieldSpec``) is identical.
     """
 
-    def __init__(self, api_key: str | None = None, model: str | None = None,
-                 client=None, chunk_size: int = CHUNK_SIZE, max_tokens: int = 4096):
+    def __init__(self, model: str | None, chunk_size: int, max_tokens: int):
         if model is None:
-            raise ValueError("AnthropicSpecSource requires an explicit model")
+            raise ValueError(f"{type(self).__name__} requires an explicit model")
         self.model = model
         self.chunk_size = chunk_size
         self.max_tokens = max_tokens
-        if client is not None:
-            self._client = client
-        else:
-            import anthropic  # lazy: only needed for real API calls
-
-            self._client = anthropic.Anthropic(api_key=api_key)
 
     def estimate(self, requests: list[ValueRequest], text_pool_size: int) -> dict[str, FieldSpec]:
         n_calls = (len(requests) + self.chunk_size - 1) // self.chunk_size
@@ -210,15 +204,12 @@ class AnthropicSpecSource(SpecSource):
             f"Provide a spec for each variable. For 'text' variables give about "
             f"{text_pool_size} examples.\n{_MODEL_MARKER}{json.dumps(variables)}"
         )
-        response = self._client.messages.parse(
-            model=self.model,
-            max_tokens=self.max_tokens,
-            system=_SYSTEM,
-            messages=[{"role": "user", "content": user}],
-            output_format=_SpecTable,
-        )
-        table = response.parsed_output
+        table = self._call_model(_SYSTEM, user)
         return {s.key: self._to_field_spec(s) for s in table.specs}
+
+    def _call_model(self, system: str, user: str) -> "_SpecTable":
+        """Call the vendor's structured-output API and return the parsed table."""
+        raise NotImplementedError
 
     @staticmethod
     def _variable(req: ValueRequest) -> dict:
@@ -246,3 +237,61 @@ class AnthropicSpecSource(SpecSource):
             latest=model.latest,
             examples=examples,
         )
+
+
+class AnthropicSpecSource(_ChunkedSpecSource):
+    """Estimate field specs via the Anthropic API using structured output.
+
+    The Anthropic client is injectable for testing; in production it is created
+    lazily from an API key so importing this module never requires the SDK.
+    """
+
+    def __init__(self, api_key: str | None = None, model: str | None = None,
+                 client=None, chunk_size: int = CHUNK_SIZE, max_tokens: int = 4096):
+        super().__init__(model, chunk_size, max_tokens)
+        if client is not None:
+            self._client = client
+        else:
+            import anthropic  # lazy: only needed for real API calls
+
+            self._client = anthropic.Anthropic(api_key=api_key)
+
+    def _call_model(self, system: str, user: str) -> "_SpecTable":
+        response = self._client.messages.parse(
+            model=self.model,
+            max_tokens=self.max_tokens,
+            system=system,
+            messages=[{"role": "user", "content": user}],
+            output_format=_SpecTable,
+        )
+        return response.parsed_output
+
+
+class OpenAISpecSource(_ChunkedSpecSource):
+    """Estimate field specs via the OpenAI API using structured output.
+
+    Uses ``chat.completions.parse`` with the same ``_SpecTable`` Pydantic schema
+    as the Anthropic source. The client is injectable for testing; in production
+    it is created lazily so importing this module never requires the SDK.
+    """
+
+    def __init__(self, api_key: str | None = None, model: str | None = None,
+                 client=None, chunk_size: int = CHUNK_SIZE, max_tokens: int = 4096):
+        super().__init__(model, chunk_size, max_tokens)
+        if client is not None:
+            self._client = client
+        else:
+            import openai  # lazy: only needed for real API calls
+
+            self._client = openai.OpenAI(api_key=api_key)
+
+    def _call_model(self, system: str, user: str) -> "_SpecTable":
+        completion = self._client.chat.completions.parse(
+            model=self.model,
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            response_format=_SpecTable,
+        )
+        return completion.choices[0].message.parsed
