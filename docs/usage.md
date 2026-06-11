@@ -1,5 +1,8 @@
 # Usage
 
+> For how the tool works under the hood, see [dev-notes.md](dev-notes.md)
+> (beginner-friendly) and [architecture.md](architecture.md) (reference).
+
 ## `generate`
 
 Generate a full set of linked metadata files from a schema.
@@ -15,9 +18,31 @@ poetry run gen3-metadata-simulator generate --schema <path> [options]
 | `--num-records`, `-n` | `30` | Number of records to generate per node. |
 | `--project-code`, `-p` | `simulated_project` | Project `code`; child nodes link to the project by this value. |
 | `--seed` | *(none)* | RNG seed. Set it for byte-identical, reproducible output. |
-| `--provider` | `random` | Value strategy: `random` (v1) or `llm` (v2, not yet implemented). |
+| `--provider` | `random` | Value strategy: `random` (schema-driven random) or `llm` (realistic values via a lightweight model). |
+| `--llm-model` | *(none)* | **Required with `--provider llm`.** Model id, e.g. `claude-haiku-4-5`. |
+| `--cache-path` | `.cache/distributions.json` | Where the LLM provider caches field specs (so repeat runs make no API calls). |
 | `--array-size` | `0` | Number of elements to emit for array-typed properties. `0` emits `[]`. |
 | `--skip-validation` | off | Write output without self-validating first. |
+
+### Realistic values with `--provider llm`
+
+The LLM provider asks a lightweight model for each field's realistic properties
+(numeric distribution + limits, plausible date ranges, example text), caches
+them, and samples from the cache. See
+[dev-notes.md → Value providers](dev-notes.md#3-value-providers--where-the-values-come-from).
+
+Set up the API key once — `.env` holds a **path** to a key file, never the key:
+
+```bash
+cp .env.example .env
+# edit .env:  LLM_API_KEY_FILE=/path/to/your/anthropic_key
+```
+
+```bash
+poetry run gen3-metadata-simulator generate \
+    -s examples/jsonschema/acdc_schema_v1.1.5.json \
+    --provider llm --llm-model claude-haiku-4-5 -n 5 --seed 1
+```
 
 On success the command prints `0 validation errors` and a summary of files
 written. If validation fails, it prints the errors (grouped by node, with a few

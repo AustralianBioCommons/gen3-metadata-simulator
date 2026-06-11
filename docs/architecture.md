@@ -1,5 +1,9 @@
 # Architecture
 
+> New to the codebase? Read [dev-notes.md](dev-notes.md) first — it explains the
+> same system from the ground up with a worked example. This page is the concise
+> reference.
+
 ## Data flow
 
 ```

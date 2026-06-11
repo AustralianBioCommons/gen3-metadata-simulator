@@ -120,11 +120,23 @@ Extra flags: `--llm-model` (required), `--cache-path` (default
 `.cache/distributions.json`). See [`docs/architecture.md`](docs/architecture.md)
 for the design and the pluggable `ValueProvider` / `SpecSource` interfaces.
 
+## Documentation
+
+- **[docs/dev-notes.md](docs/dev-notes.md)** — start here if you're new to the
+  code. A ground-up, junior-dev-friendly walkthrough of how it all works, with a
+  worked example, the value providers explained, and how to extend it.
+- **[docs/architecture.md](docs/architecture.md)** — the data-flow diagram,
+  module responsibilities, and the LLM provider / cache design.
+- **[docs/usage.md](docs/usage.md)** — every CLI flag for `generate` and
+  `validate`, with examples.
+
 ## Development
 
 ```bash
-poetry run python3 -m pytest    # run the test suite
+poetry run python3 -m pytest    # run the test suite (fully offline)
 ```
 
-The example dictionary in `examples/jsonschema/` is used as the test fixture;
-`tests/test_roundtrip.py` asserts generated metadata validates with zero errors.
+The example dictionary in `examples/jsonschema/` is the test fixture. The key
+tests are the round-trips (`tests/test_roundtrip.py`, `tests/test_roundtrip_llm.py`):
+generate → validate → assert zero errors. New to the codebase? Read
+[docs/dev-notes.md](docs/dev-notes.md) first.
