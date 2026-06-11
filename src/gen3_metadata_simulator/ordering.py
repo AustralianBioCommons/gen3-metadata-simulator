@@ -13,9 +13,12 @@ children for every node, including core_metadata_collection.
 
 from __future__ import annotations
 
+import logging
 from collections import defaultdict, deque
 
 from gen3_validator import DataDictionary
+
+logger = logging.getLogger(__name__)
 
 
 def generation_order(dd: DataDictionary, generatable: set[str]) -> list[str]:
@@ -60,4 +63,5 @@ def generation_order(dd: DataDictionary, generatable: set[str]) -> list[str]:
     for node in sorted(generatable):
         if node not in ordered:
             ordered.append(node)
+    logger.debug("Generation order (%d nodes): %s", len(ordered), ", ".join(ordered))
     return ordered

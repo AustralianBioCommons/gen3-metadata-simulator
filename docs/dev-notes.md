@@ -174,7 +174,8 @@ per-record (that'd be slow and expensive). Instead:
 
 1. **`warmup()`** runs once before generation. It collects every numeric/date/
    text field, asks the model for a compact **spec** per field, and caches them
-   to `.cache/distributions.json`.
+   to `.cache/distributions.json`. Fields already in the cache (unchanged) are
+   skipped — see "Cache invalidation" below.
 2. **`value()`** then just samples from the cached spec — no network, fully
    reproducible under a seed.
 
@@ -216,6 +217,36 @@ This indirection is what makes the whole provider testable offline:
 A `FieldSpec` is just a frozen dataclass holding the per-kind fields
 (`mean/stddev/min/max/unit`, or `earliest/latest`, or `examples`). `SpecCache`
 loads/saves the whole table to JSON.
+
+#### Cache invalidation — re-estimating only what changed
+
+The cache would be a trap if it never noticed the schema changed: edit a field's
+type and you'd keep getting stale (or randomly-fallen-back) values. To avoid
+that, every cache entry stores an **md5 fingerprint of that field's JSON schema**
+alongside the spec:
+
+```json
+"demographic/month_birth": {
+  "fingerprint": "63f969cda984d46534b3905cc3f20e47",
+  "spec": {"kind": "numeric", "mean": 6.5, "stddev": 3.4, "minimum": 1, "maximum": 12, "unit": "month"}
+}
+```
+
+The fingerprint is computed in `generator._build_request` from the resolved
+property schema (type, enum, pattern, bounds, description — anything that affects
+generation). On each run, `warmup()` compares it against the cached one:
+
+- **unchanged** (fingerprint matches) → reuse the cached spec, no API call;
+- **changed** (a property's type/bounds were edited) → the md5 differs, so *just
+  that field* is re-estimated and its entry overwritten;
+- **new** field → no entry yet, so it's estimated;
+- removed field → its stale entry is simply ignored.
+
+So pointing the tool at an edited schema refreshes only the affected fields — not
+the whole table. Need everything regenerated regardless? Pass `--refresh-llm` to
+ignore the cache and re-estimate every field. Old cache files written before
+fingerprinting still load (their entries just lack a fingerprint, so they rebuild
+once on the next run).
 
 #### How the API key is loaded (`config.py`)
 
@@ -289,6 +320,12 @@ poetry run gen3-metadata-simulator generate -s examples/jsonschema/acdc_schema_v
 poetry run gen3-metadata-simulator generate -s examples/jsonschema/acdc_schema_v1.1.5.json \
     --provider llm --llm-model claude-haiku-4-5 -n 5 --seed 1
 ```
+
+Runs are quiet by default. Add `--verbose` to see milestones (including the LLM
+warmup cache breakdown: fields reused vs re-estimated, and API calls made), or
+`--debug` for per-item detail and full tracebacks. Logging uses the standard
+`logging` module, one logger per module (`logging.getLogger(__name__)`); the CLI
+just sets the level via `configure_logging`.
 
 ### Test it
 

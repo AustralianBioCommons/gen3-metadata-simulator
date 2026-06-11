@@ -1,7 +1,27 @@
 """Tests for record generation: shape, link integrity, and determinism."""
 
-from gen3_metadata_simulator.generator import MetadataGenerator
+from gen3_metadata_simulator.generator import MetadataGenerator, _build_request
 from gen3_metadata_simulator.providers.random_provider import RandomValueProvider
+
+
+def test_build_request_fingerprint_is_stable_and_change_sensitive():
+    """A field's fingerprint is identical for the same schema and differs when it changes.
+
+    This md5 is what lets the LLM cache re-estimate only the fields a schema edit
+    actually touched: identical property schemas must hash the same, and changing
+    the property's type must change the hash.
+    """
+    node_schema = {"required": []}
+    prop_v1 = {"type": "integer", "description": "month of birth"}
+    prop_v1_again = {"description": "month of birth", "type": "integer"}  # key order differs
+    prop_v2 = {"type": "string", "description": "month of birth"}  # type changed
+
+    fp1 = _build_request("demographic", "month_birth", prop_v1, node_schema).fingerprint
+    fp1_again = _build_request("demographic", "month_birth", prop_v1_again, node_schema).fingerprint
+    fp2 = _build_request("demographic", "month_birth", prop_v2, node_schema).fingerprint
+
+    assert fp1 == fp1_again  # order-independent, stable
+    assert fp1 != fp2        # a type change is detected
 
 
 def test_project_is_single_object_with_code(generator):

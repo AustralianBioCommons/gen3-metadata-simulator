@@ -7,11 +7,14 @@ Draft-4 validator and returns a list of failure dicts (empty == all valid).
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from gen3_validator import validate
 
 from gen3_metadata_simulator.generator import PROJECT_NODE
+
+logger = logging.getLogger(__name__)
 
 
 def flatten_records(data: dict[str, Any]) -> list[dict]:
@@ -31,7 +34,10 @@ def flatten_records(data: dict[str, Any]) -> list[dict]:
 
 def self_validate(data: dict[str, Any], resolved_schema: dict) -> list[dict]:
     """Validate all generated records; return the list of failures (empty=pass)."""
-    return validate.validate_list_dict(flatten_records(data), resolved_schema)
+    records = flatten_records(data)
+    failures = validate.validate_list_dict(records, resolved_schema)
+    logger.info("Validation: %d record(s), %d failure(s)", len(records), len(failures))
+    return failures
 
 
 def summarize_failures(failures: list[dict]) -> str:

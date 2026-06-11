@@ -132,3 +132,66 @@ def test_same_seed_is_deterministic(tmp_path):
     p2, _ = _provider({"lab_result/value": spec}, tmp_path / "b", seed=7)
     p1.warmup([req]); p2.warmup([req])
     assert p1.value(req) == p2.value(req)
+
+
+# --- fingerprint-driven cache invalidation ---------------------------------
+
+_FP_SPECS = {
+    "demographic/bmi_baseline": FieldSpec(kind="numeric", mean=27.0, stddev=5.0, minimum=12, maximum=60),
+    "demographic/month_birth": FieldSpec(kind="numeric", mean=6.5, stddev=3.4, minimum=1, maximum=12),
+}
+
+
+def _numeric_req(name, fingerprint, json_type="number"):
+    return ValueRequest(node="demographic", name=name, json_type=json_type, fingerprint=fingerprint)
+
+
+def test_changed_fingerprint_requeries_only_that_field(tmp_path):
+    """When one field's schema changes, only that field is re-estimated.
+
+    First run caches both fields with their fingerprints. On the second run
+    month_birth's fingerprint differs (its schema changed) while bmi_baseline's
+    is unchanged — so the source is asked for month_birth alone, and the
+    unchanged field is reused from cache.
+    """
+    cache_path = str(tmp_path / "specs.json")
+    bmi = _numeric_req("bmi_baseline", "bmi-v1")
+    month = _numeric_req("month_birth", "month-v1", json_type="integer")
+
+    s1 = FakeSpecSource(_FP_SPECS)
+    LLMValueProvider(random.Random(0), s1, cache_path=cache_path).warmup([bmi, month])
+    assert set(s1.requested_keys) == {"demographic/bmi_baseline", "demographic/month_birth"}
+
+    month_changed = _numeric_req("month_birth", "month-v2", json_type="integer")
+    s2 = FakeSpecSource(_FP_SPECS)
+    LLMValueProvider(random.Random(0), s2, cache_path=cache_path).warmup([bmi, month_changed])
+    assert s2.requested_keys == ["demographic/month_birth"]
+
+
+def test_new_field_is_queried(tmp_path):
+    """A field absent from the cache (new key) is always estimated."""
+    cache_path = str(tmp_path / "specs.json")
+    s1 = FakeSpecSource(_FP_SPECS)
+    LLMValueProvider(random.Random(0), s1, cache_path=cache_path).warmup([_numeric_req("bmi_baseline", "bmi-v1")])
+
+    s2 = FakeSpecSource(_FP_SPECS)
+    LLMValueProvider(random.Random(0), s2, cache_path=cache_path).warmup(
+        [_numeric_req("bmi_baseline", "bmi-v1"), _numeric_req("month_birth", "month-v1", "integer")]
+    )
+    assert s2.requested_keys == ["demographic/month_birth"]  # bmi reused, month new
+
+
+def test_force_refresh_requeries_everything(tmp_path):
+    """--refresh-llm (force_refresh) re-estimates every field even when cached.
+
+    Despite identical fingerprints to the cached run, force_refresh bypasses the
+    cache match so both fields are re-queried — the escape hatch for getting
+    fresh estimates on demand.
+    """
+    cache_path = str(tmp_path / "specs.json")
+    reqs = [_numeric_req("bmi_baseline", "bmi-v1"), _numeric_req("month_birth", "month-v1", "integer")]
+    LLMValueProvider(random.Random(0), FakeSpecSource(_FP_SPECS), cache_path=cache_path).warmup(reqs)
+
+    s2 = FakeSpecSource(_FP_SPECS)
+    LLMValueProvider(random.Random(0), s2, cache_path=cache_path, force_refresh=True).warmup(reqs)
+    assert set(s2.requested_keys) == {"demographic/bmi_baseline", "demographic/month_birth"}

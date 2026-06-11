@@ -20,6 +20,7 @@ no API calls and is reproducible under a seed.
 
 from __future__ import annotations
 
+import logging
 import random
 from typing import Any, Iterable
 
@@ -28,6 +29,8 @@ from gen3_metadata_simulator.providers.classify import field_kind
 from gen3_metadata_simulator.providers.dates import realistic_date
 from gen3_metadata_simulator.providers.random_provider import RandomValueProvider
 from gen3_metadata_simulator.providers.specs import FieldSpec, SpecCache, SpecSource, spec_key
+
+logger = logging.getLogger(__name__)
 
 _LLM_KINDS = {"numeric", "date", "text"}
 
@@ -42,31 +45,52 @@ class LLMValueProvider(ValueProvider):
         cache_path: str = ".cache/distributions.json",
         array_size: int = 0,
         text_pool_size: int = 10,
+        force_refresh: bool = False,
     ):
         self.rng = rng
         self.source = source
         self.cache_path = cache_path
         self.text_pool_size = text_pool_size
+        self.force_refresh = force_refresh
         self._cache = SpecCache().load(cache_path)
         self._random = RandomValueProvider(rng, array_size=array_size)
 
     def warmup(self, requests: Iterable[ValueRequest]) -> None:
-        """Fetch and cache specs for uncached numeric/date/text fields."""
+        """Estimate and cache specs for numeric/date/text fields that need it.
+
+        A field is (re-)estimated when it is new, when its schema fingerprint no
+        longer matches the cached one (the field's type/constraints changed), or
+        when ``force_refresh`` is set. Unchanged, already-cached fields are
+        reused with no API call.
+        """
         missing: dict[str, ValueRequest] = {}
+        considered = reused = 0
         for req in requests:
             if field_kind(req) not in _LLM_KINDS:
                 continue
+            considered += 1
             key = spec_key(req)
-            if key in self._cache or key in missing:
+            if key in missing:
                 continue
+            if not self.force_refresh and self._cache.matches(key, req.fingerprint):
+                reused += 1
+                continue
+            reason = "forced" if self.force_refresh else ("new" if key not in self._cache else "schema changed")
+            logger.debug("LLM warmup: estimating %s (%s)", key, reason)
             missing[key] = req
+
+        logger.info(
+            "LLM warmup: %d field(s) considered, %d reused from cache, %d to estimate%s",
+            considered, reused, len(missing), " [force refresh]" if self.force_refresh else "",
+        )
         if not missing:
             return
 
         estimates = self.source.estimate(list(missing.values()), self.text_pool_size)
         for key, spec in estimates.items():
-            self._cache.put(key, spec)
+            self._cache.put(key, spec, fingerprint=missing[key].fingerprint)
         self._cache.save(self.cache_path)
+        logger.info("LLM warmup: cached %d spec(s) to %s", len(estimates), self.cache_path)
 
     def value(self, req: ValueRequest) -> Any:
         kind = field_kind(req)

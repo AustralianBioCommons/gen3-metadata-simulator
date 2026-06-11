@@ -14,6 +14,7 @@ implements it against the Anthropic API using structured output.
 from __future__ import annotations
 
 import json
+import logging
 from abc import ABC, abstractmethod
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -23,6 +24,8 @@ from pydantic import BaseModel
 
 from gen3_metadata_simulator.providers.base import ValueRequest
 from gen3_metadata_simulator.providers.classify import field_kind
+
+logger = logging.getLogger(__name__)
 
 CHUNK_SIZE = 20
 _MODEL_MARKER = "VARIABLES_JSON:"
@@ -70,31 +73,57 @@ class FieldSpec:
 
 
 class SpecCache:
-    """An in-memory, JSON-persistable table of ``"node/name" -> FieldSpec``."""
+    """A JSON-persistable table of ``"node/name" -> (FieldSpec, fingerprint)``.
+
+    The fingerprint is an md5 of the field's schema (see ``generator._fingerprint``).
+    Storing it lets the LLM provider tell a *cached and unchanged* field from one
+    whose schema changed and must be re-estimated.
+
+    On-disk format: ``{"<node/name>": {"fingerprint": "...", "spec": {...}}}``.
+    Older flat files (``{"<node/name>": {"kind": ...}}``) still load — their
+    entries get ``fingerprint=None`` and are harmlessly rebuilt on the next run.
+    """
 
     def __init__(self):
-        self._specs: dict[str, FieldSpec] = {}
+        self._entries: dict[str, tuple[FieldSpec, Optional[str]]] = {}
 
     def get(self, key: str) -> Optional[FieldSpec]:
-        return self._specs.get(key)
+        entry = self._entries.get(key)
+        return entry[0] if entry else None
 
-    def put(self, key: str, spec: FieldSpec) -> None:
-        self._specs[key] = spec
+    def fingerprint(self, key: str) -> Optional[str]:
+        entry = self._entries.get(key)
+        return entry[1] if entry else None
+
+    def matches(self, key: str, fingerprint: Optional[str]) -> bool:
+        """True if ``key`` is cached and its stored fingerprint equals ``fingerprint``."""
+        return key in self._entries and self._entries[key][1] == fingerprint
+
+    def put(self, key: str, spec: FieldSpec, fingerprint: Optional[str] = None) -> None:
+        self._entries[key] = (spec, fingerprint)
 
     def __contains__(self, key: str) -> bool:
-        return key in self._specs
+        return key in self._entries
 
     def load(self, path: str) -> "SpecCache":
         p = Path(path)
         if p.is_file():
             raw = json.loads(p.read_text())
-            self._specs = {k: FieldSpec.from_dict(v) for k, v in raw.items()}
+            for key, value in raw.items():
+                if "spec" in value:  # new format: {fingerprint, spec}
+                    self._entries[key] = (FieldSpec.from_dict(value["spec"]),
+                                          value.get("fingerprint"))
+                else:  # legacy flat format: the spec dict itself
+                    self._entries[key] = (FieldSpec.from_dict(value), None)
         return self
 
     def save(self, path: str) -> None:
         p = Path(path)
         p.parent.mkdir(parents=True, exist_ok=True)
-        serialised = {k: v.to_dict() for k, v in self._specs.items()}
+        serialised = {
+            key: {"fingerprint": fp, "spec": spec.to_dict()}
+            for key, (spec, fp) in self._entries.items()
+        }
         p.write_text(json.dumps(serialised, indent=2, sort_keys=True))
 
 
@@ -164,6 +193,9 @@ class AnthropicSpecSource(SpecSource):
             self._client = anthropic.Anthropic(api_key=api_key)
 
     def estimate(self, requests: list[ValueRequest], text_pool_size: int) -> dict[str, FieldSpec]:
+        n_calls = (len(requests) + self.chunk_size - 1) // self.chunk_size
+        logger.info("LLM estimate: %d field(s) over %d API call(s) [model=%s]",
+                    len(requests), n_calls, self.model)
         out: dict[str, FieldSpec] = {}
         for start in range(0, len(requests), self.chunk_size):
             chunk = requests[start:start + self.chunk_size]
@@ -171,6 +203,8 @@ class AnthropicSpecSource(SpecSource):
         return out
 
     def _estimate_chunk(self, chunk: list[ValueRequest], text_pool_size: int) -> dict[str, FieldSpec]:
+        logger.debug("LLM estimate: requesting %d spec(s): %s",
+                     len(chunk), ", ".join(spec_key(r) for r in chunk))
         variables = [self._variable(req) for req in chunk]
         user = (
             f"Provide a spec for each variable. For 'text' variables give about "

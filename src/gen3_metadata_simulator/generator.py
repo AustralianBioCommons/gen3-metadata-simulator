@@ -14,6 +14,9 @@ Flow:
 
 from __future__ import annotations
 
+import hashlib
+import json
+import logging
 import random
 from typing import Any
 
@@ -22,6 +25,8 @@ from gen3_metadata_simulator.ordering import generation_order
 from gen3_metadata_simulator.providers.base import ValueProvider, ValueRequest
 from gen3_metadata_simulator.registry import GeneratedRecordRegistry
 from gen3_metadata_simulator.schema import SchemaLoader
+
+logger = logging.getLogger(__name__)
 
 # Properties that carry semantic meaning but are not links or system fields and
 # must always be present.
@@ -62,6 +67,10 @@ class MetadataGenerator:
             single dict; every other node maps to a list of dicts.
         """
         result: dict[str, Any] = {}
+        logger.info(
+            "Generating metadata: %d node(s), %d record(s) each, provider=%s",
+            len(self.order), self.num_records, type(self.provider).__name__,
+        )
 
         # Let the value provider pre-compute anything it needs (the LLM provider
         # builds its distribution/limit/date/text table here; random ignores it).
@@ -76,6 +85,7 @@ class MetadataGenerator:
                 continue
             records = [self._make_record(node) for _ in range(self.num_records)]
             result[node] = records
+            logger.debug("Generated %d %s record(s)", len(records), node)
         return result
 
     # -- record factories ----------------------------------------------------
@@ -206,7 +216,19 @@ def _build_request(node: str, name: str, prop: dict, node_schema: dict) -> Value
         minimum=prop.get("minimum"),
         maximum=prop.get("maximum"),
         required=required,
+        fingerprint=_fingerprint(prop),
     )
+
+
+def _fingerprint(prop: dict) -> str:
+    """md5 of a field's resolved JSON schema.
+
+    Any change to the property's schema (type, enum, pattern, bounds,
+    description) flips this hash, so the LLM cache knows to re-estimate just that
+    field. ``default=str`` keeps it robust to non-JSON-native values.
+    """
+    canonical = json.dumps(prop, sort_keys=True, default=str)
+    return hashlib.md5(canonical.encode()).hexdigest()
 
 
 def _json_type(prop: dict) -> str | None:

@@ -34,6 +34,9 @@ class ValueRequest:
     :param minimum: Numeric lower bound, if present.
     :param maximum: Numeric upper bound, if present.
     :param required: Whether the property is required by the node.
+    :param fingerprint: md5 of the field's resolved JSON schema. Lets the LLM
+        provider's cache detect when a field's schema changed and re-query only
+        that field. ``None`` when not computed (e.g. hand-built in tests).
     """
 
     node: str
@@ -47,6 +50,7 @@ class ValueRequest:
     minimum: Optional[float] = None
     maximum: Optional[float] = None
     required: bool = False
+    fingerprint: Optional[str] = None
 
 
 class ValueProvider(ABC):

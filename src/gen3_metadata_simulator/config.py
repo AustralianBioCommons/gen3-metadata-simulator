@@ -7,12 +7,15 @@ contains the key. This module resolves that indirection and returns the key.
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 
 from dotenv import dotenv_values
 
 from gen3_metadata_simulator.errors import ConfigError
+
+logger = logging.getLogger(__name__)
 
 KEY_FILE_VAR = "LLM_API_KEY_FILE"
 
@@ -42,4 +45,5 @@ def load_api_key(env_path: str = ".env", env_var: str = KEY_FILE_VAR) -> str:
     key = path.read_text().strip()
     if not key:
         raise ConfigError(f"The key file {path} is empty.")
+    logger.debug("Loaded LLM API key from %s", path)  # never log the key itself
     return key

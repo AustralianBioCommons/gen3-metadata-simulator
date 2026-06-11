@@ -20,8 +20,11 @@ poetry run gen3-metadata-simulator generate --schema <path> [options]
 | `--provider` | `random` | Value strategy: `random` (schema-driven random) or `llm` (realistic values via a lightweight model). |
 | `--llm-model` | *(none)* | **Required with `--provider llm`.** Model id, e.g. `claude-haiku-4-5`. |
 | `--cache-path` | `.cache/distributions.json` | Where the LLM provider caches field specs (so repeat runs make no API calls). |
+| `--refresh-llm` | off | Force fresh LLM estimates, ignoring the cache (re-estimates every field). |
 | `--array-size` | `0` | Number of elements to emit for array-typed properties. `0` emits `[]`. |
 | `--skip-validation` | off | Write output without self-validating first. |
+| `--verbose`, `-v` | off | Log progress milestones (schema loaded, warmup cache breakdown, validation, write). |
+| `--debug` | off | Log per-item detail (generation order, which fields are re-estimated and why) plus full tracebacks; also enables the Anthropic SDK's own logging. |
 
 ### Realistic values with `--provider llm`
 
@@ -42,6 +45,11 @@ poetry run gen3-metadata-simulator generate \
     -s examples/jsonschema/acdc_schema_v1.1.5.json \
     --provider llm --llm-model claude-haiku-4-5 -n 5 --seed 1
 ```
+
+The cache fingerprints each field by its schema, so a later run against an
+**edited** schema re-estimates only the fields that actually changed; everything
+else is reused with no API call. To re-estimate everything regardless, add
+`--refresh-llm`.
 
 On success the command prints `0 validation errors` and a summary of files
 written. If validation fails, it prints the errors (grouped by node, with a few
@@ -80,6 +88,18 @@ poetry run gen3-metadata-simulator validate \
 |------|---------|-------------|
 | `--schema`, `-s` | *(required)* | Path to the bundled Gen3 JSON schema. |
 | `--metadata-dir`, `-m` | *(required)* | Directory of `<node>.json` files to validate. |
+| `--verbose`, `-v` | off | Log progress milestones. |
+| `--debug` | off | Log detail plus full tracebacks. |
+
+## Logging & debugging
+
+Both commands are quiet by default (only the final result line, plus warnings
+and errors). Add `--verbose` for a clean set of progress milestones — schema
+loaded, the LLM warmup cache breakdown (fields reused vs re-estimated, and how
+many API calls were made), validation result, and files written. Add `--debug`
+for per-item detail (generation order, each re-estimated field and why) and full
+tracebacks on failure. Noisy dependency logs are kept at WARNING so the output
+stays readable.
 
 Every `*.json` file in the directory is loaded; the file stem is treated as the
 node name. Records are validated per their `type` and a grouped error summary is

@@ -8,9 +8,13 @@ generated, and the underlying `DataDictionary` used for topological ordering.
 
 from __future__ import annotations
 
+import logging
+
 from gen3_validator import ResolveSchema
 
 from gen3_metadata_simulator.errors import InvalidGen3SchemaError
+
+logger = logging.getLogger(__name__)
 
 # Schema keys that are not generatable nodes. ``program`` is not submittable in
 # Gen3 (it sits above ``project`` and is created administratively), so the
@@ -52,6 +56,8 @@ class SchemaLoader:
         self._resolver = resolver
         self.raw = resolver.schema
         self.resolved = resolver.schema_resolved
+        logger.info("Loaded schema %s: %d node(s) resolved, %d submittable",
+                    self.schema_path, len(self.resolved), len(self.submittable_nodes()))
         return self
 
     @property

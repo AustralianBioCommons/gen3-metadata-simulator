@@ -9,10 +9,13 @@ sorted keys to match the reference metadata.
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
 from gen3_metadata_simulator.generator import PROJECT_NODE
+
+logger = logging.getLogger(__name__)
 
 IMPORT_ORDER_FILE = "DataImportOrder.txt"
 
@@ -33,8 +36,10 @@ def write_outputs(data: dict[str, Any], order: list[str], output_dir: str | Path
         with path.open("w") as fh:
             json.dump(records, fh, indent=4, sort_keys=True)
             fh.write("\n")
+        logger.debug("Wrote %s", path)
 
     write_data_import_order(order, out)
+    logger.info("Wrote %d node file(s) + %s to %s", len(data), IMPORT_ORDER_FILE, out)
     return out
 
 

@@ -19,26 +19,58 @@ from gen3_metadata_simulator.providers.specs import (
 )
 
 
-def test_spec_cache_roundtrips_all_kinds(tmp_path):
-    """A cache of numeric/date/text specs saves to JSON and loads back identically.
+def test_spec_cache_roundtrips_specs_and_fingerprints(tmp_path):
+    """A cache of specs + fingerprints saves to JSON and loads back identically.
 
     Persistence is what makes the LLM provider cheap on repeat runs — the saved
-    table must reload to the same specs it was built from.
+    table must reload to the same specs *and* the per-field fingerprints used to
+    detect schema changes.
     """
     cache = SpecCache()
     cache.put("demographic/month_birth",
-              FieldSpec(kind="numeric", mean=6.5, stddev=3.4, minimum=1, maximum=12, unit="month"))
+              FieldSpec(kind="numeric", mean=6.5, stddev=3.4, minimum=1, maximum=12, unit="month"),
+              fingerprint="md5-month")
     cache.put("demographic/baseline_date",
-              FieldSpec(kind="date", earliest="1990-01-01", latest="2020-12-31"))
+              FieldSpec(kind="date", earliest="1990-01-01", latest="2020-12-31"),
+              fingerprint="md5-date")
     cache.put("lipidomics_assay/assay_description",
-              FieldSpec(kind="text", examples=("LC-MS/MS lipidomics of plasma", "Shotgun lipidomics")))
+              FieldSpec(kind="text", examples=("LC-MS/MS lipidomics of plasma", "Shotgun lipidomics")),
+              fingerprint="md5-text")
     path = tmp_path / "specs.json"
     cache.save(str(path))
 
     reloaded = SpecCache().load(str(path))
     assert reloaded.get("demographic/month_birth") == cache.get("demographic/month_birth")
     assert reloaded.get("demographic/baseline_date") == cache.get("demographic/baseline_date")
-    assert reloaded.get("lipidomics_assay/assay_description") == cache.get("lipidomics_assay/assay_description")
+    assert reloaded.fingerprint("demographic/month_birth") == "md5-month"
+
+
+def test_matches_compares_stored_fingerprint(tmp_path):
+    """matches() is true only when the field is cached AND its fingerprint equals.
+
+    This is the gate that decides "reuse" vs "re-estimate": a matching md5 means
+    the field's schema is unchanged, a different md5 means it changed.
+    """
+    cache = SpecCache()
+    cache.put("n/p", FieldSpec(kind="numeric", mean=1.0, stddev=0.5), fingerprint="md5-a")
+    assert cache.matches("n/p", "md5-a") is True
+    assert cache.matches("n/p", "md5-b") is False      # schema changed
+    assert cache.matches("absent/key", "md5-a") is False  # never cached
+
+
+def test_legacy_flat_cache_loads_with_no_fingerprint(tmp_path):
+    """An old flat-format cache file still loads, with fingerprints set to None.
+
+    Backward compatibility: existing .cache/distributions.json files (written
+    before fingerprinting) must not crash. Their entries carry no fingerprint, so
+    they get rebuilt once on the next run rather than reused blindly.
+    """
+    path = tmp_path / "old.json"
+    path.write_text('{"demographic/month_birth": {"kind": "numeric", "mean": 6.5, "stddev": 3.4}}')
+
+    cache = SpecCache().load(str(path))
+    assert cache.get("demographic/month_birth").mean == 6.5
+    assert cache.fingerprint("demographic/month_birth") is None
 
 
 class _FakeMessages:
