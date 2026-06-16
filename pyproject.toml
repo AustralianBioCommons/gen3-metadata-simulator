@@ -1,6 +1,6 @@
 [project]
 name = "gen3-metadata-simulator"
-version = "0.1.0"
+version = "0.2.0"
 description = "Simulate linked Gen3 metadata JSON files from a bundled Gen3 JSON schema"
 authors = [{ name = "Joshua Harris" }]
 readme = "README.md"
