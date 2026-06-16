@@ -1,5 +1,7 @@
 """Custom exceptions for gen3-metadata-simulator."""
 
+from __future__ import annotations
+
 
 class Gen3SimulatorError(Exception):
     """Base class for all errors raised by this package."""

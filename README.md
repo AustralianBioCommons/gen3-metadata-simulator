@@ -16,7 +16,7 @@ lands in `[1, 12]`, dates are real, and an assay `description` reads like one.
 ## Install
 
 ```bash
-pip install gen3-metadata-simulator      # Python ≥ 3.12.10
+pip install gen3-metadata-simulator      # Python ≥ 3.9
 ```
 
 ## Quickstart — realistic data with an LLM

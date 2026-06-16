@@ -15,6 +15,10 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.9', '3.10', '3.11', '3.12']
 
     steps:
       - name: Checkout code
@@ -26,8 +30,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          # gen3schemadev requires >=3.12.10, so 3.9 (our other repos' default) won't work here.
-          python-version: '3.12'
+          python-version: ${{ matrix.python-version }}
           cache: poetry
 
       - name: Install dependencies
