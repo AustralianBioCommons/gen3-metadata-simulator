@@ -23,25 +23,29 @@ pip install gen3-metadata-simulator      # Python ≥ 3.12.10
 
 The core feature. Three steps:
 
-**1. Configure the model + key.** Put your API key in a file outside the repo
-and lock it down, then point a `.env` at it (works with OpenAI or Anthropic):
+**1. Configure the model + key.** Put your API key in its own file and lock it
+down (works with OpenAI or Anthropic):
 
 ```bash
 mkdir -p ~/.config/gen3-sim
 printf 'sk-...' > ~/.config/gen3-sim/openai_key   # your key, in its own file
 chmod 600 ~/.config/gen3-sim/openai_key           # readable only by you
-
-cp .env.example .env                              # .env is gitignored
-# edit .env:
-#   LLM_PROVIDER=openai                           # or: anthropic
-#   LLM_MODEL=gpt-4o-mini                          # or e.g. claude-haiku-4-5
-#   LLM_API_KEY_FILE=/absolute/path/to/openai_key
 ```
 
-Keeping the key in a permission-locked file (and `.env` holding only its *path*)
-keeps the secret out of your shell history, out of every child process's
-environment, and out of anything you commit — see
+Then create a `.env` in the directory you'll run from, pointing at that key file:
+
+```ini
+# .env  — works with OpenAI or Anthropic
+LLM_PROVIDER=openai                            # or: anthropic
+LLM_MODEL=gpt-4o-mini                          # or e.g. claude-haiku-4-5
+LLM_API_KEY_FILE=/absolute/path/to/openai_key
+```
+
+`.env` holds only the *path*, never the key — keep it untracked (add it to your
+`.gitignore`). This keeps the secret out of your shell history, out of every
+child process's environment, and out of anything you commit; see
 [docs/usage.md](docs/usage.md) for the full rationale and resolution rules.
+(Working in a clone of this repo? `cp .env.example .env` for a ready template.)
 
 **2. Generate** (provider + model come from `.env`):
 

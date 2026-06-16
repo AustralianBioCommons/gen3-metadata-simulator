@@ -39,16 +39,17 @@ field's realistic properties (numeric distribution + limits, plausible date
 ranges, example text), caches them, and samples from the cache. See
 [dev-notes.md → Value providers](dev-notes.md#3-value-providers--where-the-values-come-from).
 
-Set up once — copy the example env and fill in three values. `.env` holds the
-vendor, the model, and a **path** to your key file (never the key itself):
+Set up once — create a `.env` with three values. It holds the vendor, the model,
+and a **path** to your key file (never the key itself):
 
-```bash
-cp .env.example .env
-# edit .env:
-#   LLM_PROVIDER=anthropic        # or: openai
-#   LLM_MODEL=claude-haiku-4-5    # or e.g. gpt-4o-mini
-#   LLM_API_KEY_FILE=/path/to/your/api_key
+```ini
+# .env
+LLM_PROVIDER=anthropic        # or: openai
+LLM_MODEL=claude-haiku-4-5    # or e.g. gpt-4o-mini
+LLM_API_KEY_FILE=/absolute/path/to/your/api_key
 ```
+
+(Working in a clone of this repo? `cp .env.example .env` for a ready template.)
 
 Then select the LLM strategy (vendor + model come from `.env`):
 
