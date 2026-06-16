@@ -1,5 +1,8 @@
 # gen3-metadata-simulator
 
+[![PyPI](https://img.shields.io/pypi/v/gen3-metadata-simulator.svg)](https://pypi.org/project/gen3-metadata-simulator/)
+[![Python](https://img.shields.io/pypi/pyversions/gen3-metadata-simulator.svg)](https://pypi.org/project/gen3-metadata-simulator/)
+
 Generate realistic, **linked**, schema-valid Gen3 metadata from a bundled Gen3
 JSON schema. Point it at a Gen3 data dictionary and it produces one JSON file
 per node (plus a `DataImportOrder.txt`), with every foreign key resolving to a
@@ -17,24 +20,16 @@ order, and fills every node with simulated records that pass validation.
 
 Requires Python ≥ 3.12.10 (a constraint inherited from `gen3schemadev`).
 
-For local development:
-
 ```bash
-poetry install
+pip install gen3-metadata-simulator
 ```
 
-### Using it in another project (pip install)
+This installs the `gen3-metadata-simulator` command. For local development of
+this repo, use `poetry install` instead.
 
-The CLI installs the `gen3-metadata-simulator` command. Until it's on PyPI,
-install from the tagged release:
+### Using it in another project
 
-```bash
-pip install "git+https://github.com/AustralianBioCommons/gen3-metadata-simulator.git@v0.1.0"
-# once published to PyPI:
-# pip install gen3-metadata-simulator
-```
-
-Then bring your own schema and configure the LLM provider via environment
+Once installed, bring your own schema and configure the LLM provider via environment
 variables or a `.env` in your working directory (see
 [Realistic values](#realistic-values-with-an-llm---provider-llm)). The API key
 comes from `LLM_API_KEY_FILE` (use an **absolute** path) **or**, if that's
