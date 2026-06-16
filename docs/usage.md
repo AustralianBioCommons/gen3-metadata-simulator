@@ -1,6 +1,10 @@
 # Usage
 
 > For how the tool works under the hood, see [dev-notes.md](dev-notes.md).
+>
+> Examples below use `poetry run` for local development. If you installed via
+> `pip install gen3-metadata-simulator`, drop the `poetry run` prefix — the
+> command is just `gen3-metadata-simulator …`.
 
 ## `generate`
 
