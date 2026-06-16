@@ -71,6 +71,44 @@ def test_overrides_beat_env(tmp_path):
     assert cfg.provider == "openai" and cfg.model == "gpt-4o-mini"
 
 
+def _write_env_no_key(tmp_path, **vars) -> str:
+    """Write a temp .env WITHOUT a key-file path (for env-var fallback tests)."""
+    env_file = tmp_path / ".env"
+    env_file.write_text("\n".join(f"{k}={v}" for k, v in vars.items()) + "\n")
+    return str(env_file)
+
+
+def test_no_key_file_falls_back_to_vendor_env_var(tmp_path, monkeypatch):
+    """With no LLM_API_KEY_FILE but OPENAI_API_KEY set, api_key is None (SDK reads it).
+
+    This is the installed-tool path: a user who already has OPENAI_API_KEY in
+    their environment shouldn't be forced to also create a key file. api_key=None
+    tells us to let the OpenAI SDK pick the key up itself.
+    """
+    monkeypatch.delenv("LLM_API_KEY_FILE", raising=False)
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-from-env")
+    env = _write_env_no_key(tmp_path, LLM_PROVIDER="openai", LLM_MODEL="gpt-4o-mini")
+
+    cfg = load_llm_config(env_path=env)
+    assert cfg.provider == "openai"
+    assert cfg.api_key is None
+
+
+def test_no_key_anywhere_raises(tmp_path, monkeypatch):
+    """With neither a key file nor the vendor env var, load_llm_config errors clearly.
+
+    The user must be told to set one or the other rather than hitting an opaque
+    401 from the SDK later.
+    """
+    monkeypatch.delenv("LLM_API_KEY_FILE", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    env = _write_env_no_key(tmp_path, LLM_PROVIDER="openai", LLM_MODEL="gpt-4o-mini")
+
+    with pytest.raises(ConfigError):
+        load_llm_config(env_path=env)
+
+
 def test_load_api_key_reads_key_from_referenced_file(tmp_path):
     """.env points at a key file; load_api_key returns that file's stripped contents.
 

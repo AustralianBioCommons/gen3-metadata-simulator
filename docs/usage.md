@@ -20,6 +20,7 @@ poetry run gen3-metadata-simulator generate --schema <path> [options]
 | `--provider` | `random` | Value strategy: `random` (schema-driven random) or `llm` (realistic values via a lightweight model). |
 | `--llm-provider` | *(from `.env`)* | LLM vendor override: `anthropic` or `openai`. Defaults to `.env` `LLM_PROVIDER`. |
 | `--llm-model` | *(from `.env`)* | LLM model override, e.g. `claude-haiku-4-5` / `gpt-4o-mini`. Defaults to `.env` `LLM_MODEL`. |
+| `--env-file` | `./.env` | Path to an env file with `LLM_*` settings. Useful when the tool is installed and run from elsewhere. |
 | `--cache-path` | `.cache/distributions.json` | Where the LLM provider caches field specs (so repeat runs make no API calls). |
 | `--refresh-llm` | off | Force fresh LLM estimates, ignoring the cache (re-estimates every field). |
 | `--array-size` | `0` | Number of elements to emit for array-typed properties. `0` emits `[]`. |
@@ -57,8 +58,16 @@ The first run estimates field specs in **parallel batches** (so warmup takes
 tens of seconds, not minutes) and shows a live `Estimating field specs: N/M
 batches` counter on an interactive terminal. Later runs reuse the cache.
 
-Override the `.env` per run with `--llm-provider anthropic|openai` and
-`--llm-model <id>` — e.g. to try OpenAI without editing the file.
+Override the `.env` per run with `--llm-provider anthropic|openai`,
+`--llm-model <id>`, and `--env-file <path>` — e.g. to try OpenAI without editing
+the file, or to point at config outside the current directory.
+
+**Where the settings come from.** Each is read from `--env-file` (or `./.env`),
+then the process environment. The API key resolves as: `LLM_API_KEY_FILE` (a
+path to the key — use an **absolute** path, since a relative one is resolved
+against the working directory) → otherwise the vendor's standard variable
+(`OPENAI_API_KEY` / `ANTHROPIC_API_KEY`), which the SDK reads directly. If
+neither is set you get a clear error before any API call.
 
 > Two "provider" words: `--provider random|llm` is the *value strategy*;
 > `LLM_PROVIDER` / `--llm-provider` (`anthropic|openai`) is the *LLM vendor*.

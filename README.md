@@ -17,9 +17,30 @@ order, and fills every node with simulated records that pass validation.
 
 Requires Python ≥ 3.12.10 (a constraint inherited from `gen3schemadev`).
 
+For local development:
+
 ```bash
 poetry install
 ```
+
+### Using it in another project (pip install)
+
+The CLI installs the `gen3-metadata-simulator` command. Until it's on PyPI,
+install from the tagged release:
+
+```bash
+pip install "git+https://github.com/AustralianBioCommons/gen3-metadata-simulator.git@v0.1.0"
+# once published to PyPI:
+# pip install gen3-metadata-simulator
+```
+
+Then bring your own schema and configure the LLM provider via environment
+variables or a `.env` in your working directory (see
+[Realistic values](#realistic-values-with-an-llm---provider-llm)). The API key
+comes from `LLM_API_KEY_FILE` (use an **absolute** path) **or**, if that's
+unset, the vendor's standard variable (`OPENAI_API_KEY` / `ANTHROPIC_API_KEY`)
+— so if you already have one of those exported, it just works. Point at a config
+file anywhere with `--env-file`.
 
 ## Quickstart
 
@@ -112,8 +133,10 @@ cp .env.example .env
 #   LLM_API_KEY_FILE=/path/to/your/api_key
 ```
 
-`.env` is gitignored. Then just select the LLM strategy — provider and model
-come from `.env`:
+`.env` is gitignored. (If you'd rather not use a key file, omit
+`LLM_API_KEY_FILE` and export the vendor's standard variable instead —
+`OPENAI_API_KEY` or `ANTHROPIC_API_KEY`.) Then just select the LLM strategy —
+provider and model come from `.env`:
 
 ```bash
 poetry run gen3-metadata-simulator generate \
@@ -121,7 +144,8 @@ poetry run gen3-metadata-simulator generate \
     --provider llm --num-records 5 --seed 1
 ```
 
-Override per run with `--llm-provider anthropic|openai` and `--llm-model <id>`.
+Override per run with `--llm-provider anthropic|openai`, `--llm-model <id>`, and
+`--env-file <path>` (to load settings from a file other than `./.env`).
 See [`docs/usage.md`](docs/usage.md) for all flags and
 [`docs/dev-notes.md`](docs/dev-notes.md) for the design and the pluggable
 `ValueProvider` / `SpecSource` interfaces.

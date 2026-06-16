@@ -1,0 +1,40 @@
+# Build and test on pushes and pull requests.
+name: Build and Test
+
+on:
+  push:
+    branches:
+      - main
+      - 'feat/**'
+      - 'fix/**'
+      - 'refactor/**'
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install Poetry
+        run: pipx install poetry
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          # gen3schemadev requires >=3.12.10, so 3.9 (our other repos' default) won't work here.
+          python-version: '3.12'
+          cache: poetry
+
+      - name: Install dependencies
+        run: poetry install
+
+      - name: Build package
+        run: poetry build
+
+      - name: Run tests
+        run: poetry run python -m pytest

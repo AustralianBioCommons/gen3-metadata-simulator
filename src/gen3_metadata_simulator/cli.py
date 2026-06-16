@@ -62,6 +62,7 @@ def _build_provider(
     array_size: int,
     llm_provider: Optional[str],
     llm_model: Optional[str],
+    env_file: Optional[str],
     cache_path: str,
     text_pool_size: int,
     refresh_llm: bool,
@@ -70,13 +71,17 @@ def _build_provider(
         return RandomValueProvider(rng, array_size=array_size)
 
     # llm: realistic values from a lightweight model. Vendor, model, and key
-    # come from .env (LLM_PROVIDER / LLM_MODEL / LLM_API_KEY_FILE), overridable
-    # by --llm-provider / --llm-model.
+    # come from .env (LLM_PROVIDER / LLM_MODEL / LLM_API_KEY_FILE) or the
+    # environment, overridable by --llm-provider / --llm-model / --env-file.
     from gen3_metadata_simulator.config import load_llm_config
     from gen3_metadata_simulator.providers.llm_provider import LLMValueProvider
     from gen3_metadata_simulator.providers.specs import AnthropicSpecSource, OpenAISpecSource
 
-    cfg = load_llm_config(provider_override=llm_provider, model_override=llm_model)
+    cfg = load_llm_config(
+        env_path=env_file or ".env",
+        provider_override=llm_provider,
+        model_override=llm_model,
+    )
     source_cls = OpenAISpecSource if cfg.provider == "openai" else AnthropicSpecSource
     source = source_cls(api_key=cfg.api_key, model=cfg.model)
     return LLMValueProvider(
@@ -119,6 +124,8 @@ def generate(
                                                help="LLM vendor override (anthropic|openai); defaults to .env LLM_PROVIDER."),
     llm_model: Optional[str] = typer.Option(None, "--llm-model",
                                             help="LLM model override; defaults to .env LLM_MODEL."),
+    env_file: Optional[Path] = typer.Option(None, "--env-file", exists=True, dir_okay=False,
+                                            help="Path to an env file with LLM_* settings (default: ./.env)."),
     cache_path: Path = typer.Option(Path(".cache/distributions.json"), "--cache-path",
                                     help="Where the LLM provider caches field specs."),
     refresh_llm: bool = typer.Option(False, "--refresh-llm",
@@ -142,7 +149,8 @@ def generate(
     rng = random.Random(seed)
     try:
         value_provider = _build_provider(
-            provider, rng, array_size, llm_provider, llm_model, str(cache_path),
+            provider, rng, array_size, llm_provider, llm_model,
+            str(env_file) if env_file else None, str(cache_path),
             text_pool_size=min(num_records, 15), refresh_llm=refresh_llm,
         )
     except Gen3SimulatorError as exc:

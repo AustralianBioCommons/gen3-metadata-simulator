@@ -1,4 +1,7 @@
-examples
+# Example dir: keep examples/jsonschema (the test fixture + documented input),
+# but ignore the bulky reference-tool copies and generated sample metadata.
+examples/ref/
+examples/metadata/
 
 # Python
 __pycache__/
@@ -6,6 +9,7 @@ __pycache__/
 .venv/
 *.egg-info/
 .pytest_cache/
+dist/
 
 # Secrets
 .env
