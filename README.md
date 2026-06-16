@@ -23,20 +23,30 @@ pip install gen3-metadata-simulator      # Python ≥ 3.12.10
 
 The core feature. Three steps:
 
-**1. Give it a model + API key.** Quickest is to export your key and pass a model
-(works with OpenAI or Anthropic):
+**1. Configure the model + key.** Put your API key in a file outside the repo
+and lock it down, then point a `.env` at it (works with OpenAI or Anthropic):
 
 ```bash
-export OPENAI_API_KEY=sk-...             # or: export ANTHROPIC_API_KEY=sk-ant-...
+mkdir -p ~/.config/gen3-sim
+printf 'sk-...' > ~/.config/gen3-sim/openai_key   # your key, in its own file
+chmod 600 ~/.config/gen3-sim/openai_key           # readable only by you
+
+cp .env.example .env                              # .env is gitignored
+# edit .env:
+#   LLM_PROVIDER=openai                           # or: anthropic
+#   LLM_MODEL=gpt-4o-mini                          # or e.g. claude-haiku-4-5
+#   LLM_API_KEY_FILE=/absolute/path/to/openai_key
 ```
 
-**2. Generate:**
+Keeping the key in a permission-locked file (and `.env` holding only its *path*)
+keeps the secret out of your shell history, out of every child process's
+environment, and out of anything you commit — see
+[docs/usage.md](docs/usage.md) for the full rationale and resolution rules.
+
+**2. Generate** (provider + model come from `.env`):
 
 ```bash
-gen3-metadata-simulator generate \
-    --schema your-gen3-schema.json \
-    --provider llm --llm-provider openai --llm-model gpt-4o-mini \
-    --num-records 30
+gen3-metadata-simulator generate --schema your-gen3-schema.json --provider llm --num-records 30
 ```
 
 > Cloned this repo to try it out? Use the bundled schema
@@ -47,9 +57,13 @@ limits, valid dates, sensible text. Field estimates are cached
 (`.cache/distributions.json`), so reruns make no API calls and `--seed` is
 reproducible.
 
-**Prefer a config file?** `cp .env.example .env` and set `LLM_PROVIDER`,
-`LLM_MODEL`, and `LLM_API_KEY_FILE` (a path to your key) — then just pass
-`--provider llm`. Full key/config rules: [docs/usage.md](docs/usage.md).
+**In CI or a quick one-off?** Skip the file and let the SDK read the vendor's
+standard env var instead — ephemeral and the native choice for CI/containers:
+
+```bash
+export OPENAI_API_KEY=sk-...   # injected as a secret in CI; avoid persisting it locally
+gen3-metadata-simulator generate -s your-gen3-schema.json --provider llm --llm-provider openai --llm-model gpt-4o-mini -n 30
+```
 
 ### No API key? Random placeholder values
 

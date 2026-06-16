@@ -73,6 +73,20 @@ against the working directory) → otherwise the vendor's standard variable
 (`OPENAI_API_KEY` / `ANTHROPIC_API_KEY`), which the SDK reads directly. If
 neither is set you get a clear error before any API call.
 
+**Which should I use — key file or env var?**
+
+- **Local / dev → key file (recommended).** Keep the key in its own file
+  (`chmod 600`, outside the repo) and put only its *path* in `.env`. The secret
+  then stays out of your shell history, out of every child process's environment
+  (where credential scanners and careless dependencies look first), and out of
+  anything you commit — `.env` carries a path, never the key. It also rotates by
+  editing one file and can point at a secrets-manager mount.
+- **CI / containers → env var.** Platforms inject secrets as environment
+  variables, they're ephemeral (never written to disk), and there's no shell
+  history — so `export OPENAI_API_KEY=…` (read automatically by the SDK) is the
+  right call there. Avoid persisting an `export` in your shell rc files for local
+  use; that's the weakest option (long-lived plaintext, inherited everywhere).
+
 > Two "provider" words: `--provider random|llm` is the *value strategy*;
 > `LLM_PROVIDER` / `--llm-provider` (`anthropic|openai`) is the *LLM vendor*.
 
